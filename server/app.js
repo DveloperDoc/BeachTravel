@@ -1,5 +1,6 @@
 // server/app.js
 const path = require("path");
+const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -90,15 +91,24 @@ app.get("/api/health", (req, res) => {
 });
 
 //==============================
-// 7. Servir frontend en producción
+// 7. Servir frontend SOLO si existe dist
 //==============================
 if (NODE_ENV === "production") {
   const clientPath = path.join(__dirname, "..", "client", "dist");
-  app.use(express.static(clientPath));
+  const indexPath = path.join(clientPath, "index.html");
 
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(clientPath, "index.html"));
-  });
+  if (fs.existsSync(indexPath)) {
+    console.log("[APP] Detectado client/dist, sirviendo frontend estático");
+    app.use(express.static(clientPath));
+
+    app.get("*", (req, res) => {
+      res.sendFile(indexPath);
+    });
+  } else {
+    console.log(
+      "[APP] client/dist no encontrado, no se sirve frontend desde el backend"
+    );
+  }
 }
 
 //==============================
