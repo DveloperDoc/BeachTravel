@@ -1,0 +1,6 @@
+# .gitignore (raíz)
+node_modules
+dist
+.env
+server/.env
+client/.env

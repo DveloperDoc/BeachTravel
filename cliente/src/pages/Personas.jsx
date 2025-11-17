@@ -1,0 +1,763 @@
+import { useContext, useEffect, useState, useMemo } from "react";
+import {
+  Container,
+  Button,
+  Table,
+  Modal,
+  Form,
+  Row,
+  Col,
+  Alert,
+  Spinner,
+  Pagination,
+} from "react-bootstrap";
+import NavbarUser from "../components/NavbarUser";
+import { AuthContext } from "../context/AuthContext";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+export default function Personas() {
+  const { token, user, authFetch } = useContext(AuthContext);
+
+  const [personas, setPersonas] = useState([]);
+  const [villas, setVillas] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const [showModal, setShowModal] = useState(false);
+  const [editingPersona, setEditingPersona] = useState(null);
+  const [form, setForm] = useState({
+    nombre: "",
+    rut: "",
+    direccion: "",
+    telefono: "",
+    correo: "",
+    villa_id: "",
+  });
+  const [formErrors, setFormErrors] = useState({});
+
+  const [saving, setSaving] = useState(false);
+
+  // Confirmación de eliminación
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [personaToDelete, setPersonaToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Filtros y paginación
+  const [search, setSearch] = useState("");
+  const [filterVillaId, setFilterVillaId] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  // ==============================
+  // Carga inicial: personas + villas
+  // ==============================
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+
+      try {
+        const [personasRes, villasRes] = await Promise.all([
+          authFetch("/api/personas"),
+          authFetch("/api/villas"),
+        ]);
+
+        if (!personasRes.ok) {
+          const err = await personasRes.json().catch(() => ({}));
+          throw new Error(err.message || "Error al obtener personas");
+        }
+
+        if (!villasRes.ok) {
+          const err = await villasRes.json().catch(() => ({}));
+          throw new Error(err.message || "Error al obtener villas");
+        }
+
+        const personasData = await personasRes.json();
+        const villasData = await villasRes.json();
+
+        setPersonas(personasData);
+        setVillas(villasData);
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "Error de carga");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (token) {
+      fetchData();
+    }
+  }, [token, authFetch]);
+
+  // ==============================
+  // Validación frontend
+  // ==============================
+  const validateForm = (data, isEdit) => {
+    const errors = {};
+
+    // Nombre
+    if (!data.nombre.trim()) {
+      errors.nombre = "El nombre es obligatorio";
+    } else if (data.nombre.trim().length < 3) {
+      errors.nombre = "El nombre debe tener al menos 3 caracteres";
+    }
+
+    // RUT (básico, el cálculo real lo hace el backend)
+    if (!data.rut.trim()) {
+      errors.rut = "El RUT es obligatorio";
+    } else {
+      const clean = data.rut.replace(/[.\-]/g, "");
+      if (clean.length < 7 || clean.length > 9) {
+        errors.rut = "El RUT parece tener un largo inválido";
+      }
+    }
+
+    // Correo
+    if (data.correo && data.correo.trim() !== "") {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.correo)) {
+        errors.correo = "Correo electrónico inválido";
+      }
+    }
+
+    // Teléfono
+    if (data.telefono && data.telefono.trim() !== "") {
+      if (!/^[0-9+\s-]{6,15}$/.test(data.telefono)) {
+        errors.telefono = "Teléfono inválido";
+      }
+    }
+
+    // Villa solo editable/obligatoria para ADMIN
+    if (user?.rol === "ADMIN") {
+      if (!data.villa_id) {
+        errors.villa_id = "Debe seleccionar una villa";
+      }
+    }
+
+    return errors;
+  };
+
+  // ==============================
+  // Manejo de formularios / modales
+  // ==============================
+  const openNewModal = () => {
+    setEditingPersona(null);
+    setForm({
+      nombre: "",
+      rut: "",
+      direccion: "",
+      telefono: "",
+      correo: "",
+      villa_id: "",
+    });
+    setFormErrors({});
+    setError("");
+    setSuccess("");
+    setShowModal(true);
+  };
+
+  const openEditModal = (persona) => {
+    setEditingPersona(persona);
+    setForm({
+      nombre: persona.nombre || "",
+      rut: persona.rut || "",
+      direccion: persona.direccion || "",
+      telefono: persona.telefono || "",
+      correo: persona.correo || "",
+      villa_id: persona.villa_id || "",
+    });
+    setFormErrors({});
+    setError("");
+    setSuccess("");
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setShowModal(false);
+    setEditingPersona(null);
+    setForm({
+      nombre: "",
+      rut: "",
+      direccion: "",
+      telefono: "",
+      correo: "",
+      villa_id: "",
+    });
+    setFormErrors({});
+  };
+
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    setFormErrors((prev) => ({
+      ...prev,
+      [name]: "",
+    }));
+    setError("");
+  };
+
+  // ==============================
+  // Guardar (create / update)
+  // ==============================
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    setFormErrors({});
+
+    const isEdit = !!editingPersona;
+    const errors = validateForm(form, isEdit);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        nombre: form.nombre,
+        rut: form.rut,
+        direccion: form.direccion,
+        telefono: form.telefono,
+        correo: form.correo,
+        // Para ADMIN se manda villa_id; para DIRIGENTE el backend usa req.user.villa_id
+        villa_id:
+          user?.rol === "ADMIN" && form.villa_id
+            ? Number(form.villa_id)
+            : null,
+      };
+
+      const url = editingPersona
+        ? `/api/personas/${editingPersona.id}`
+        : "/api/personas";
+      const method = editingPersona ? "PUT" : "POST";
+
+      const res = await authFetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        if (res.status === 400 && data?.errors) {
+          // Errores express-validator
+          const backendErrors = {};
+          for (const err of data.errors) {
+            if (err.path) {
+              backendErrors[err.path] = err.msg || "Valor inválido";
+            }
+          }
+          setFormErrors(backendErrors);
+          setError(data?.message || "Datos inválidos");
+        } else if (res.status === 409) {
+          // Conflictos, por ejemplo RUT duplicado
+          setError(data?.message || "Datos en conflicto");
+          if (data?.message?.toLowerCase().includes("rut")) {
+            setFormErrors((prev) => ({
+              ...prev,
+              rut: data.message,
+            }));
+          }
+        } else {
+          setError(data?.message || "Error al guardar persona");
+        }
+        setSaving(false);
+        return;
+      }
+
+      const saved = data;
+
+      if (editingPersona) {
+        setPersonas((prev) =>
+          prev.map((p) => (p.id === saved.id ? { ...p, ...saved } : p))
+        );
+        setSuccess("Persona actualizada correctamente");
+      } else {
+        setPersonas((prev) => [...prev, saved]);
+        setSuccess("Persona creada correctamente");
+      }
+
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Error al guardar persona");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ==============================
+  // Eliminar persona (con modal)
+  // ==============================
+  const handleAskDelete = (persona) => {
+    setPersonaToDelete(persona);
+    setShowConfirm(true);
+    setError("");
+    setSuccess("");
+  };
+
+  const handleCloseConfirm = () => {
+    if (deleting) return;
+    setShowConfirm(false);
+    setPersonaToDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!personaToDelete) return;
+
+    setDeleting(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const res = await authFetch(`/api/personas/${personaToDelete.id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setError(data?.message || "Error al eliminar persona");
+        setDeleting(false);
+        return;
+      }
+
+      setPersonas((prev) => prev.filter((p) => p.id !== personaToDelete.id));
+      setSuccess("Persona eliminada correctamente");
+      handleCloseConfirm();
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Error al eliminar persona");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ==============================
+  // Filtros + paginación (derivados)
+  // ==============================
+  const filteredPersonas = useMemo(() => {
+    let data = [...personas];
+
+    // Filtro texto (nombre o RUT)
+    if (search.trim()) {
+      const term = search.trim().toLowerCase();
+      data = data.filter(
+        (p) =>
+          p.nombre.toLowerCase().includes(term) ||
+          (p.rut || "").toLowerCase().includes(term)
+      );
+    }
+
+    // Filtro villa (solo si ADMIN)
+    if (user?.rol === "ADMIN" && filterVillaId) {
+      const vid = Number(filterVillaId);
+      data = data.filter((p) => Number(p.villa_id) === vid);
+    }
+
+    return data;
+  }, [personas, search, filterVillaId, user]);
+
+  const totalItems = filteredPersonas.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const startIndex = (currentPageSafe - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+
+  const paginatedPersonas = filteredPersonas.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterVillaId]);
+
+  // ==============================
+  // Exportar a Excel (respeta filtros)
+  // ==============================
+  const exportPersonasExcel = () => {
+    try {
+      if (!filteredPersonas.length) {
+        alert("No hay personas para exportar con los filtros actuales.");
+        return;
+      }
+
+      const data = filteredPersonas.map((p) => ({
+        Nombre: p.nombre,
+        RUT: p.rut,
+        Dirección: p.direccion || "",
+        Teléfono: p.telefono || "",
+        Correo: p.correo || "",
+        Villa: p.villa_nombre || "",
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Personas");
+
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([buf], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const nombreArchivo =
+        user?.rol === "DIRIGENTE"
+          ? `personas_villa_${(filteredPersonas[0]?.villa_nombre || "mi_villa")
+              .replace(/\s+/g, "_")
+              .toLowerCase()}.xlsx`
+          : "personas_filtradas.xlsx";
+
+      saveAs(blob, nombreArchivo);
+    } catch (err) {
+      console.error(err);
+      setError("Error al exportar personas a Excel");
+    }
+  };
+
+  // ==============================
+  // Render
+  // ==============================
+  const tituloVilla =
+    user?.rol === "DIRIGENTE"
+      ? "Listado de personas de tu villa"
+      : "Listado de personas de todas las villas";
+
+  return (
+    <>
+      <NavbarUser />
+      <Container className="mt-4">
+        <Row className="mb-3">
+          <Col>
+            <h2>Personas inscritas</h2>
+            <p>{tituloVilla}</p>
+          </Col>
+          <Col className="text-end">
+            <Button
+              variant="success"
+              onClick={exportPersonasExcel}
+              className="mt-2"
+            >
+              Exportar listado a Excel
+            </Button>
+          </Col>
+        </Row>
+
+        {error && (
+          <Alert variant="danger" onClose={() => setError("")} dismissible>
+            {error}
+          </Alert>
+        )}
+        {success && (
+          <Alert variant="success" onClose={() => setSuccess("")} dismissible>
+            {success}
+          </Alert>
+        )}
+
+        {/* Filtros */}
+        <Row className="mb-3">
+          <Col md={4} className="mb-2">
+            <Form.Control
+              placeholder="Buscar por nombre o RUT..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </Col>
+          {user?.rol === "ADMIN" && (
+            <Col md={4} className="mb-2">
+              <Form.Select
+                value={filterVillaId}
+                onChange={(e) => setFilterVillaId(e.target.value)}
+              >
+                <option value="">Todas las villas</option>
+                {villas.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.nombre}
+                  </option>
+                ))}
+              </Form.Select>
+            </Col>
+          )}
+          <Col md={4} className="text-md-end mb-2">
+            <Button variant="primary" onClick={openNewModal}>
+              + Nueva persona
+            </Button>
+          </Col>
+        </Row>
+
+        <Row className="mb-2">
+          <Col>
+            <small className="text-muted">
+              Mostrando {paginatedPersonas.length} de {totalItems} personas
+              {search || filterVillaId ? " (filtradas)" : ""}.
+            </small>
+          </Col>
+        </Row>
+
+        {loading ? (
+          <div className="d-flex align-items-center">
+            <Spinner animation="border" size="sm" className="me-2" />
+            <span>Cargando personas...</span>
+          </div>
+        ) : (
+          <>
+            <Table striped bordered hover responsive>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Nombre</th>
+                  <th>RUT</th>
+                  <th>Dirección</th>
+                  <th>Teléfono</th>
+                  <th>Correo</th>
+                  <th>Villa</th>
+                  <th style={{ width: "150px" }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedPersonas.map((p, idx) => (
+                  <tr key={p.id}>
+                    <td>{startIndex + idx + 1}</td>
+                    <td>{p.nombre}</td>
+                    <td>{p.rut}</td>
+                    <td>{p.direccion}</td>
+                    <td>{p.telefono}</td>
+                    <td>{p.correo}</td>
+                    <td>{p.villa_nombre || "—"}</td>
+                    <td>
+                      <Button
+                        variant="warning"
+                        size="sm"
+                        className="me-2"
+                        onClick={() => openEditModal(p)}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleAskDelete(p)}
+                      >
+                        Eliminar
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {!paginatedPersonas.length && (
+                  <tr>
+                    <td colSpan={8} className="text-center">
+                      No hay personas que coincidan con los filtros.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </Table>
+
+            {/* Paginación */}
+            {totalPages > 1 && (
+              <div className="d-flex justify-content-center">
+                <Pagination>
+                  <Pagination.First
+                    disabled={currentPageSafe === 1}
+                    onClick={() => setCurrentPage(1)}
+                  />
+                  <Pagination.Prev
+                    disabled={currentPageSafe === 1}
+                    onClick={() =>
+                      setCurrentPage((p) => Math.max(1, p - 1))
+                    }
+                  />
+                  {Array.from({ length: totalPages }).map((_, i) => (
+                    <Pagination.Item
+                      key={i + 1}
+                      active={currentPageSafe === i + 1}
+                      onClick={() => setCurrentPage(i + 1)}
+                    >
+                      {i + 1}
+                    </Pagination.Item>
+                  ))}
+                  <Pagination.Next
+                    disabled={currentPageSafe === totalPages}
+                    onClick={() =>
+                      setCurrentPage((p) => Math.min(totalPages, p + 1))
+                    }
+                  />
+                  <Pagination.Last
+                    disabled={currentPageSafe === totalPages}
+                    onClick={() => setCurrentPage(totalPages)}
+                  />
+                </Pagination>
+              </div>
+            )}
+          </>
+        )}
+      </Container>
+
+      {/* Modal crear / editar persona */}
+      <Modal show={showModal} onHide={closeModal}>
+        <Form onSubmit={handleSave}>
+          <Modal.Header closeButton={!saving}>
+            <Modal.Title>
+              {editingPersona ? "Editar persona" : "Nueva persona"}
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form.Group className="mb-3">
+              <Form.Label>Nombre</Form.Label>
+              <Form.Control
+                name="nombre"
+                value={form.nombre}
+                onChange={handleFormChange}
+                isInvalid={!!formErrors.nombre}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.nombre}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>RUT</Form.Label>
+              <Form.Control
+                name="rut"
+                value={form.rut}
+                onChange={handleFormChange}
+                placeholder="12345678-9"
+                isInvalid={!!formErrors.rut}
+              />
+            <Form.Control.Feedback type="invalid">
+                {formErrors.rut}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Dirección</Form.Label>
+              <Form.Control
+                name="direccion"
+                value={form.direccion}
+                onChange={handleFormChange}
+                isInvalid={!!formErrors.direccion}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.direccion}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Teléfono</Form.Label>
+              <Form.Control
+                name="telefono"
+                value={form.telefono}
+                onChange={handleFormChange}
+                isInvalid={!!formErrors.telefono}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.telefono}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Correo</Form.Label>
+              <Form.Control
+                type="email"
+                name="correo"
+                value={form.correo}
+                onChange={handleFormChange}
+                isInvalid={!!formErrors.correo}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.correo}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            {user?.rol === "ADMIN" && (
+              <Form.Group className="mb-3">
+                <Form.Label>Villa</Form.Label>
+                <Form.Select
+                  name="villa_id"
+                  value={form.villa_id}
+                  onChange={handleFormChange}
+                  isInvalid={!!formErrors.villa_id}
+                >
+                  <option value="">Seleccione una villa</option>
+                  {villas.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.nombre}
+                    </option>
+                  ))}
+                </Form.Select>
+                <Form.Control.Feedback type="invalid">
+                  {formErrors.villa_id}
+                </Form.Control.Feedback>
+              </Form.Group>
+            )}
+
+            {user?.rol === "DIRIGENTE" && (
+              <p className="text-muted mb-0">
+                La persona quedará automáticamente asociada a tu villa.
+              </p>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={closeModal} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit" disabled={saving}>
+              {saving ? "Guardando..." : "Guardar"}
+            </Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
+
+      {/* Modal de confirmación de eliminación */}
+      <Modal show={showConfirm} onHide={handleCloseConfirm} centered>
+        <Modal.Header closeButton={!deleting}>
+          <Modal.Title>Confirmar eliminación</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {personaToDelete ? (
+            <>
+              <p>¿Seguro que deseas eliminar a la siguiente persona?</p>
+              <p>
+                <strong>{personaToDelete.nombre}</strong>
+                <br />
+                <small>{personaToDelete.rut}</small>
+              </p>
+              <p className="text-danger mb-0">
+                Esta acción no se puede deshacer.
+              </p>
+            </>
+          ) : (
+            <p>Procesando…</p>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            variant="secondary"
+            onClick={handleCloseConfirm}
+            disabled={deleting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+          >
+            {deleting ? "Eliminando..." : "Eliminar persona"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </>
+  );
+}
