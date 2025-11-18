@@ -1,6 +1,8 @@
 // client/src/api.js
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+
+// Solo usar la URL entregada por Render.
+// No incluir fallback a localhost para evitar errores de producción.
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export const apiFetch = async (endpoint, options = {}) => {
   const url = `${API_BASE}${endpoint}`;
