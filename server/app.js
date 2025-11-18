@@ -15,6 +15,8 @@ const app = express();
 const NODE_ENV = process.env.NODE_ENV || "production";
 
 const allowedOrigins = [
+  "https://beachtravelmdc.onrender.com", // FRONTEND en Render
+  "http://localhost:5173",               // FRONTEND local (Vite)
   process.env.REMOTE_CLIENT_APP,
   process.env.LOCAL_CLIENT_APP,
 ].filter(Boolean); // quita undefined/null
