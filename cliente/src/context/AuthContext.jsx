@@ -1,5 +1,6 @@
 // client/src/context/AuthContext.jsx
 import { createContext, useState } from "react";
+import { apiFetch } from "../api";
 
 export const AuthContext = createContext(null);
 
@@ -29,13 +30,10 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await apiFetch("/api/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        // IMPORTANTE: tu backend espera { email, password }
-        body: JSON.stringify({ email, password }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }), // backend espera { email, password }
       });
 
       if (!res.ok) {
@@ -68,26 +66,37 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("token");
   };
 
-  const authFetch = async (url, options = {}) => {
+  // ==============================
+  // Helper seguro: authFetch
+  // ==============================
+  const authFetch = async (endpoint, options = {}) => {
     if (!token) {
       throw new Error("No autenticado. Inicie sesión nuevamente.");
     }
 
-    const headers = {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${token}`,
-    };
+    try {
+      const res = await apiFetch(endpoint, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",   // aseguramos JSON
+          Authorization: `Bearer ${token}`,
+          ...(options.headers || {}),
+        },
+      });
 
-    const res = await fetch(url, { ...options, headers });
+      if (res.status === 401 || res.status === 403) {
+        // token inválido o permisos insuficientes
+        logout();
+        throw new Error(
+          "Sesión expirada o sin permisos. Inicie sesión nuevamente."
+        );
+      }
 
-    if (res.status === 401 || res.status === 403) {
-      logout();
-      throw new Error(
-        "Sesión expirada o sin permisos. Inicie sesión nuevamente."
-      );
+      return res;
+    } catch (err) {
+      console.error("Error en authFetch:", err);
+      throw err;
     }
-
-    return res;
   };
 
   const value = {
@@ -96,7 +105,7 @@ export function AuthProvider({ children }) {
     role,
     isAdmin,
     loading,
-    login,           // ahora login(email, password)
+    login,
     logout,
     authFetch,
     isAuthenticated,

@@ -1,7 +1,13 @@
 // server/config/middleware/authMiddleware.js
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "cambia_esto_en_produccion";
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  console.warn(
+    "[authMiddleware] ATENCIÓN: JWT_SECRET no está definido en las variables de entorno."
+  );
+}
 
 // Extrae el token Bearer del header
 function getTokenFromHeader(req) {
@@ -15,14 +21,25 @@ function authRequired(req, res, next) {
   const token = getTokenFromHeader(req);
   if (!token) {
     return res.status(401).json({
-      message: "No se encontró token de autenticación. Inicie sesión nuevamente.",
+      message:
+        "No se encontró token de autenticación. Inicie sesión nuevamente.",
     });
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     // decoded: { id, nombre, email, rol, villa_id, iat, exp }
-    req.user = decoded;
+
+    // Normalizar rol
+    const rol = (decoded.rol || "").toString().toUpperCase();
+
+    req.user = {
+      ...decoded,
+      rol,
+      isAdmin: rol === "ADMIN",
+      isDirigente: rol === "DIRIGENTE",
+    };
+
     next();
   } catch (err) {
     console.error("Error en authRequired (JWT):", err.message);
@@ -49,7 +66,7 @@ function adminOnly(req, res, next) {
   next();
 }
 
-// (Opcional) Solo rol DIRIGENTE
+// Solo rol DIRIGENTE
 function dirigenteOnly(req, res, next) {
   if (!req.user || req.user.rol !== "DIRIGENTE") {
     return res.status(403).json({

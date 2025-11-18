@@ -20,6 +20,7 @@ import { saveAs } from "file-saver";
 
 export default function AdminLogs() {
   const { token, authFetch } = useContext(AuthContext);
+
   const [logs, setLogs] = useState([]);
   const [limit, setLimit] = useState(200);
   const [loading, setLoading] = useState(true);
@@ -90,14 +91,13 @@ export default function AdminLogs() {
     }
   };
 
-  // Ahora el resumen usa el NOMBRE afectado
+  // Resumen textual usando el nombre de la entidad afectada
   const buildResumen = (log) => {
     const usuario = log.usuario_nombre || "Usuario desconocido";
     const accionLabel = mapAccionLabel(log.accion);
     const entidadLabel = mapEntidadLabel(log.entidad);
     const nombreAfectado = log.entidad_nombre || entidadLabel;
 
-    // Ej: "Admin Municipal realizó: Eliminación de persona sobre "Juan Pérez""
     return `${usuario} realizó: ${accionLabel} sobre "${nombreAfectado}"`;
   };
 
@@ -241,7 +241,7 @@ export default function AdminLogs() {
   }, [logs]);
 
   // =========================
-  // Exportar a Excel (respeta filtros)
+  // Exportar a Excel
   // =========================
   const exportLogsExcel = () => {
     try {

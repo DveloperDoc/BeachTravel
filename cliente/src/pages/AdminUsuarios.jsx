@@ -229,16 +229,12 @@ export default function AdminUsuarios() {
 
       const res = await authFetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        // Errores de validación backend
         if (res.status === 400 && data?.errors) {
           const backendErrors = {};
           for (const err of data.errors) {

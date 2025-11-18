@@ -1,19 +1,29 @@
 // server/middleware/bruteforce.js
 
-// Mapa en memoria: clave = email/IP, valor = info de intentos
+// Mapa en memoria: clave = identificador (email/username/IP), valor = info de intentos
 const attempts = new Map();
 
 // Configuración
 const WINDOW_MS = 10 * 60 * 1000; // ventana de 10 minutos
 const MAX_ATTEMPTS = 5;           // máximo 5 intentos fallidos en la ventana
 
+// Obtener IP real (pensando en proxys como Render)
+function getClientIp(req) {
+  const xff = req.headers["x-forwarded-for"];
+  if (xff && typeof xff === "string") {
+    // Primer IP de la cadena
+    return xff.split(",")[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || "unknown";
+}
+
 // Middleware principal
 function bruteforce(req, res, next) {
-  const ip = req.ip || req.connection?.remoteAddress || "unknown";
-  const { email, username } = req.body;
+  const ip = getClientIp(req);
+  const { email, username } = req.body || {};
 
   // Identificador: idealmente email; si no, username; si no, IP
-  const identifier = (email || username || ip).toLowerCase();
+  const identifier = (email || username || ip || "unknown").toString().toLowerCase();
   const now = Date.now();
 
   let record = attempts.get(identifier);
@@ -42,7 +52,7 @@ function bruteforce(req, res, next) {
     });
   }
 
-  // Guardamos el identificador para que lo use la ruta
+  // Guardamos el identificador para que lo use la ruta de login
   req.bruteforceIdentifier = identifier;
 
   next();
@@ -50,6 +60,8 @@ function bruteforce(req, res, next) {
 
 // Registrar intento fallido
 function registerFailure(identifier) {
+  if (!identifier) return;
+
   const now = Date.now();
   let record = attempts.get(identifier);
 
@@ -75,9 +87,11 @@ function registerFailure(identifier) {
 
 // Limpiar registro al éxito
 function clear(identifier) {
+  if (!identifier) return;
   attempts.delete(identifier);
 }
 
+// Mantengo compatibilidad con cómo lo vienes usando
 module.exports = bruteforce;
 module.exports.registerFailure = registerFailure;
 module.exports.clear = clear;

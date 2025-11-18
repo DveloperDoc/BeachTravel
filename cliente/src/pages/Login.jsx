@@ -1,12 +1,12 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import { Container, Card, Form, Button, Alert, Spinner } from "react-bootstrap";
 
 export default function Login() {
   const { login, loading, isAuthenticated, user } = useContext(AuthContext);
-  const [email, setEmail] = useState("correo@correo.cl"); // puedes dejar vacío
-  const [password, setPassword] = useState("54321");        // para pruebas
+  const [email, setEmail] = useState("correo@correo.cl");
+  const [password, setPassword] = useState("54321");
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
@@ -21,37 +21,26 @@ export default function Login() {
       return;
     }
 
-    // Redirigir según rol
+    // Redirección según rol
     const rol = result.user.rol;
-    if (rol === "ADMIN") {
-      navigate("/admin");
-    } else {
-      navigate("/personas");
-    }
+    navigate(rol === "ADMIN" ? "/admin" : "/personas");
   };
 
-  // Si ya está autenticado y recarga /login, lo redirigimos
-  if (isAuthenticated && user) {
-    if (user.rol === "ADMIN") {
-      navigate("/admin");
-    } else {
-      navigate("/personas");
+  // Redirigir si ya está autenticado
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const rol = user.rol;
+      navigate(rol === "ADMIN" ? "/admin" : "/personas");
     }
-  }
+  }, [isAuthenticated, user, navigate]);
 
   return (
     <Container className="d-flex justify-content-center align-items-center vh-100">
       <Card style={{ width: "28rem" }} className="shadow">
         <Card.Body>
-          <Card.Title className="text-center mb-4">
-            Iniciar sesión
-          </Card.Title>
+          <Card.Title className="text-center mb-4">Iniciar sesión</Card.Title>
 
-          {error && (
-            <Alert variant="danger">
-              {error}
-            </Alert>
-          )}
+          {error && <Alert variant="danger">{error}</Alert>}
 
           <Form onSubmit={handleSubmit}>
             <Form.Group className="mb-3">
@@ -78,12 +67,7 @@ export default function Login() {
               />
             </Form.Group>
 
-            <Button
-              className="w-100"
-              variant="primary"
-              type="submit"
-              disabled={loading}
-            >
+            <Button className="w-100" variant="primary" type="submit" disabled={loading}>
               {loading ? (
                 <>
                   <Spinner

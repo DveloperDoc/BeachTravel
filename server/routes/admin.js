@@ -1,11 +1,15 @@
 // server/routes/admin.js
 const express = require("express");
 const { pool } = require("../config/db");
-const { authRequired, adminOnly } = require("../config/middleware/authMiddleware");
+const {
+  authRequired,
+  adminOnly,
+} = require("../config/middleware/authMiddleware");
 const { body, param, validationResult } = require("express-validator");
 
 const router = express.Router();
 
+// Solo ADMIN
 router.use(authRequired, adminOnly);
 
 /* ======================================================
@@ -56,7 +60,6 @@ function validarRutChileno(rut) {
 
 /* ======================================================
    Helper: registrar log
-   (ajústelo si su tabla tiene más/menos columnas)
 ====================================================== */
 async function registrarLog({
   usuarioId,
@@ -95,6 +98,33 @@ async function registrarLog({
 }
 
 /* ======================================================
+   Helper: validar cupo de villa
+====================================================== */
+async function verificarCupoDisponible(villaId) {
+  const villaRes = await pool.query(
+    "SELECT cupo_maximo FROM villas WHERE id = $1",
+    [villaId]
+  );
+  if (villaRes.rowCount === 0) {
+    throw new Error("Villa no encontrada");
+  }
+  const { cupo_maximo } = villaRes.rows[0];
+
+  // 0 o null => sin límite
+  if (!cupo_maximo || cupo_maximo <= 0) {
+    return true;
+  }
+
+  const countRes = await pool.query(
+    "SELECT COUNT(*)::int AS total FROM personas WHERE villa_id = $1",
+    [villaId]
+  );
+
+  const total = countRes.rows[0].total;
+  return total < cupo_maximo;
+}
+
+/* ======================================================
    GET /api/admin/personas
 ====================================================== */
 router.get("/personas", async (req, res) => {
@@ -122,18 +152,21 @@ router.get("/personas", async (req, res) => {
 
 /* ======================================================
    POST /api/admin/personas
-   Crea persona con validaciones
+   Crea persona con validaciones + cupo de villa
 ====================================================== */
 router.post(
   "/personas",
   [
     body("nombre")
       .trim()
-      .notEmpty().withMessage("El nombre es obligatorio")
-      .isLength({ min: 3 }).withMessage("El nombre debe tener al menos 3 caracteres"),
+      .notEmpty()
+      .withMessage("El nombre es obligatorio")
+      .isLength({ min: 3 })
+      .withMessage("El nombre debe tener al menos 3 caracteres"),
     body("rut")
       .trim()
-      .notEmpty().withMessage("El RUT es obligatorio")
+      .notEmpty()
+      .withMessage("El RUT es obligatorio")
       .custom((value) => {
         if (!validarRutChileno(value)) {
           throw new Error("RUT inválido");
@@ -142,33 +175,52 @@ router.post(
       }),
     body("correo")
       .optional({ checkFalsy: true })
-      .isEmail().withMessage("Correo electrónico inválido")
+      .isEmail()
+      .withMessage("Correo electrónico inválido")
       .normalizeEmail(),
     body("telefono")
       .optional({ checkFalsy: true })
-      .matches(/^[0-9+\s-]{6,15}$/).withMessage("Teléfono inválido"),
+      .matches(/^[0-9+\s-]{6,15}$/)
+      .withMessage("Teléfono inválido"),
     body("direccion")
       .optional({ checkFalsy: true })
-      .isLength({ max: 255 }).withMessage("Dirección demasiado larga"),
+      .isLength({ max: 255 })
+      .withMessage("Dirección demasiado larga"),
     body("villa_id")
-      .notEmpty().withMessage("La villa es obligatoria")
-      .isInt({ min: 1 }).withMessage("villa_id debe ser un entero válido"),
+      .notEmpty()
+      .withMessage("La villa es obligatoria")
+      .isInt({ min: 1 })
+      .withMessage("villa_id debe ser un entero válido"),
   ],
   handleValidationErrors,
   async (req, res) => {
     const { nombre, rut, direccion, telefono, correo, villa_id } = req.body;
 
     try {
+      const cupoOk = await verificarCupoDisponible(villa_id);
+      if (!cupoOk) {
+        return res.status(400).json({
+          message:
+            "Se alcanzó el cupo máximo de personas para esta villa. No se pueden agregar más registros.",
+        });
+      }
+
       const inserted = await pool.query(
         `INSERT INTO personas (nombre, rut, direccion, telefono, correo, villa_id)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, nombre, rut, direccion, telefono, correo, villa_id`,
-        [nombre, rut, direccion || null, telefono || null, correo || null, villa_id]
+        [
+          nombre,
+          rut,
+          direccion || null,
+          telefono || null,
+          correo || null,
+          villa_id,
+        ]
       );
 
       const persona = inserted.rows[0];
 
-      // Log de auditoría
       await registrarLog({
         usuarioId: req.user?.id,
         accion: "CREATE_PERSONA",
@@ -189,6 +241,10 @@ router.post(
         });
       }
 
+      if (err.message === "Villa no encontrada") {
+        return res.status(400).json({ message: "La villa seleccionada no existe" });
+      }
+
       res.status(500).json({ message: "Error interno del servidor" });
     }
   }
@@ -204,11 +260,14 @@ router.put(
     param("id").isInt({ min: 1 }).withMessage("ID inválido"),
     body("nombre")
       .trim()
-      .notEmpty().withMessage("El nombre es obligatorio")
-      .isLength({ min: 3 }).withMessage("El nombre debe tener al menos 3 caracteres"),
+      .notEmpty()
+      .withMessage("El nombre es obligatorio")
+      .isLength({ min: 3 })
+      .withMessage("El nombre debe tener al menos 3 caracteres"),
     body("rut")
       .trim()
-      .notEmpty().withMessage("El RUT es obligatorio")
+      .notEmpty()
+      .withMessage("El RUT es obligatorio")
       .custom((value) => {
         if (!validarRutChileno(value)) {
           throw new Error("RUT inválido");
@@ -217,17 +276,22 @@ router.put(
       }),
     body("correo")
       .optional({ checkFalsy: true })
-      .isEmail().withMessage("Correo electrónico inválido")
+      .isEmail()
+      .withMessage("Correo electrónico inválido")
       .normalizeEmail(),
     body("telefono")
       .optional({ checkFalsy: true })
-      .matches(/^[0-9+\s-]{6,15}$/).withMessage("Teléfono inválido"),
+      .matches(/^[0-9+\s-]{6,15}$/)
+      .withMessage("Teléfono inválido"),
     body("direccion")
       .optional({ checkFalsy: true })
-      .isLength({ max: 255 }).withMessage("Dirección demasiado larga"),
+      .isLength({ max: 255 })
+      .withMessage("Dirección demasiado larga"),
     body("villa_id")
-      .notEmpty().withMessage("La villa es obligatoria")
-      .isInt({ min: 1 }).withMessage("villa_id debe ser un entero válido"),
+      .notEmpty()
+      .withMessage("La villa es obligatoria")
+      .isInt({ min: 1 })
+      .withMessage("villa_id debe ser un entero válido"),
   ],
   handleValidationErrors,
   async (req, res) => {
@@ -235,7 +299,6 @@ router.put(
     const { nombre, rut, direccion, telefono, correo, villa_id } = req.body;
 
     try {
-      // Obtener datos antes (para log)
       const before = await pool.query(
         `SELECT id, nombre, rut, direccion, telefono, correo, villa_id
          FROM personas WHERE id = $1`,
@@ -248,6 +311,17 @@ router.put(
 
       const datosAntes = before.rows[0];
 
+      // Si cambia de villa, también respetamos cupo
+      if (datosAntes.villa_id !== villa_id) {
+        const cupoOk = await verificarCupoDisponible(villa_id);
+        if (!cupoOk) {
+          return res.status(400).json({
+            message:
+              "Se alcanzó el cupo máximo de personas para la villa seleccionada.",
+          });
+        }
+      }
+
       const updated = await pool.query(
         `UPDATE personas
          SET nombre = $1,
@@ -258,12 +332,19 @@ router.put(
              villa_id = $6
          WHERE id = $7
          RETURNING id, nombre, rut, direccion, telefono, correo, villa_id`,
-        [nombre, rut, direccion || null, telefono || null, correo || null, villa_id, id]
+        [
+          nombre,
+          rut,
+          direccion || null,
+          telefono || null,
+          correo || null,
+          villa_id,
+          id,
+        ]
       );
 
       const persona = updated.rows[0];
 
-      // Log de auditoría
       await registrarLog({
         usuarioId: req.user?.id,
         accion: "UPDATE_PERSONA",
@@ -282,6 +363,10 @@ router.put(
         return res.status(409).json({
           message: "Ya existe una persona con ese RUT o correo",
         });
+      }
+
+      if (err.message === "Villa no encontrada") {
+        return res.status(400).json({ message: "La villa seleccionada no existe" });
       }
 
       res.status(500).json({ message: "Error interno del servidor" });
@@ -313,13 +398,14 @@ router.delete(
 
       const datosAntes = before.rows[0];
 
-      const result = await pool.query("DELETE FROM personas WHERE id = $1", [id]);
+      const result = await pool.query("DELETE FROM personas WHERE id = $1", [
+        id,
+      ]);
 
       if (result.rowCount === 0) {
         return res.status(404).json({ message: "Persona no encontrada" });
       }
 
-      // Log de auditoría
       await registrarLog({
         usuarioId: req.user?.id,
         accion: "DELETE_PERSONA",
@@ -396,13 +482,13 @@ router.get("/logs", async (req, res) => {
 });
 
 /* ======================================================
-   Función que convierte el log técnico en texto humano
+   Formato humano (no usado por el frontend actual,
+   pero lo dejamos disponible por si acaso)
 ====================================================== */
 async function formatoHumano(log) {
   let usuarioNombre = "";
   let entidadNombre = "";
 
-  // 1. Obtener nombre del usuario que hizo la acción
   if (log.usuario_id) {
     const u = await pool.query("SELECT nombre, rol FROM users WHERE id = $1", [
       log.usuario_id,
@@ -410,7 +496,6 @@ async function formatoHumano(log) {
     if (u.rowCount > 0) usuarioNombre = u.rows[0].nombre;
   }
 
-  // 2. Obtener nombre del elemento afectado
   if (log.entidad === "PERSONA") {
     const p = await pool.query(
       "SELECT nombre, villa_id FROM personas WHERE id = $1",
@@ -427,51 +512,42 @@ async function formatoHumano(log) {
     if (p.rowCount > 0) entidadNombre = p.rows[0].nombre;
   }
 
-  // 3. Construir mensaje humano según la acción
   let mensaje = "";
 
   switch (log.accion) {
     case "CREATE_PERSONA":
-      mensaje = `El dirigente "${usuarioNombre}" agregó a la persona "${entidadNombre}".`;
+      mensaje = `El usuario "${usuarioNombre}" agregó a la persona "${entidadNombre}".`;
       break;
-
     case "UPDATE_PERSONA":
-      mensaje = `El dirigente "${usuarioNombre}" actualizó los datos de "${entidadNombre}".`;
+      mensaje = `El usuario "${usuarioNombre}" actualizó los datos de "${entidadNombre}".`;
       break;
-
     case "DELETE_PERSONA":
-      mensaje = `El dirigente "${usuarioNombre}" eliminó a la persona "${entidadNombre}".`;
+      mensaje = `El usuario "${usuarioNombre}" eliminó a la persona "${entidadNombre}".`;
       break;
-
     case "CREATE_USER":
       mensaje = `El administrador "${usuarioNombre}" creó al usuario "${entidadNombre}".`;
       break;
-
     case "UPDATE_USER":
       mensaje = `El administrador "${usuarioNombre}" actualizó al usuario "${entidadNombre}".`;
       break;
-
     case "DELETE_USER":
       mensaje = `El administrador "${usuarioNombre}" eliminó al usuario "${entidadNombre}".`;
       break;
-
     case "DEACTIVATE_USER":
       mensaje = `El administrador "${usuarioNombre}" desactivó al usuario "${entidadNombre}".`;
       break;
-
     default:
       mensaje = `${usuarioNombre} realizó la acción ${log.accion}.`;
   }
 
   return {
-    fecha: log.created_at, // usamos created_at en vez de fecha
+    fecha: log.created_at,
     mensaje,
   };
 }
 
 /* ======================================================
    GET /api/admin/logs/humano
-   Logs formateados humanamente
 ====================================================== */
 router.get("/logs/humano", async (req, res) => {
   try {

@@ -1,15 +1,18 @@
 // server/routes/villas.js
 const express = require("express");
 const { pool } = require("../config/db");
-const { authRequired, adminOnly } = require("../config/middleware/authMiddleware");
+const {
+  authRequired,
+  adminOnly,
+} = require("../config/middleware/authMiddleware");
 
 const router = express.Router();
 
-// Solo admin
-router.use(authRequired, adminOnly);
+// Todos deben estar autenticados
+router.use(authRequired);
 
 // ================================
-// GET /api/villas
+// GET /api/villas  → listado (ADMIN y DIRIGENTE)
 // ================================
 router.get("/", async (req, res) => {
   try {
@@ -24,9 +27,9 @@ router.get("/", async (req, res) => {
 });
 
 // ================================
-// POST /api/villas → Crear villa
+// POST /api/villas → Crear villa (solo ADMIN)
 // ================================
-router.post("/", async (req, res) => {
+router.post("/", adminOnly, async (req, res) => {
   const { nombre, cupo_maximo } = req.body;
 
   if (!nombre) {
@@ -38,7 +41,9 @@ router.post("/", async (req, res) => {
     : 0;
 
   if (cupo < 0) {
-    return res.status(400).json({ message: "El cupo máximo no puede ser negativo" });
+    return res
+      .status(400)
+      .json({ message: "El cupo máximo no puede ser negativo" });
   }
 
   try {
@@ -62,7 +67,7 @@ router.post("/", async (req, res) => {
         nueva.id,
         null,
         JSON.stringify(nueva),
-        req.ip || null
+        req.ip || null,
       ]
     );
 
@@ -74,9 +79,9 @@ router.post("/", async (req, res) => {
 });
 
 // ================================
-// PUT /api/villas/:id → Editar villa
+// PUT /api/villas/:id → Editar villa (solo ADMIN)
 // ================================
-router.put("/:id", async (req, res) => {
+router.put("/:id", adminOnly, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre, cupo_maximo } = req.body;
 
@@ -89,7 +94,9 @@ router.put("/:id", async (req, res) => {
     : 0;
 
   if (cupo < 0) {
-    return res.status(400).json({ message: "El cupo máximo no puede ser negativo" });
+    return res
+      .status(400)
+      .json({ message: "El cupo máximo no puede ser negativo" });
   }
 
   try {
@@ -128,7 +135,7 @@ router.put("/:id", async (req, res) => {
         updated.id,
         JSON.stringify(before),
         JSON.stringify(updated),
-        req.ip || null
+        req.ip || null,
       ]
     );
 
@@ -140,9 +147,9 @@ router.put("/:id", async (req, res) => {
 });
 
 // ================================
-// DELETE /api/villas/:id → Eliminar villa
+// DELETE /api/villas/:id → Eliminar villa (solo ADMIN)
 // ================================
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", adminOnly, async (req, res) => {
   const id = parseInt(req.params.id, 10);
 
   try {
@@ -166,7 +173,7 @@ router.delete("/:id", async (req, res) => {
       if (err.code === "23503") {
         return res.status(409).json({
           message:
-            "No se puede eliminar la villa porque tiene registros asociados (por ejemplo dirigentes o personas)."
+            "No se puede eliminar la villa porque tiene registros asociados (por ejemplo dirigentes o personas).",
         });
       }
       throw err;
@@ -183,7 +190,7 @@ router.delete("/:id", async (req, res) => {
         before.id,
         JSON.stringify(before),
         null,
-        req.ip || null
+        req.ip || null,
       ]
     );
 

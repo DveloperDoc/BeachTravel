@@ -92,11 +92,15 @@ async function registrarLog({
   }
 }
 
+// Helper rol admin (incluye SUPER_ADMIN)
+function esAdmin(rol) {
+  return rol === "ADMIN" || rol === "SUPER_ADMIN";
+}
+
 /* ==========================================
-   FUNCION AUXILIAR: valida cupo de villa
+   FUNCIÓN AUXILIAR: valida cupo de villa
 ========================================== */
 async function verificarCupoDisponible(villaId) {
-  // obtener cupo_maximo
   const villaRes = await pool.query(
     "SELECT cupo_maximo FROM villas WHERE id = $1",
     [villaId]
@@ -125,7 +129,9 @@ async function verificarCupoDisponible(villaId) {
 ========================================== */
 router.get("/", async (req, res) => {
   try {
-    if (req.user.rol === "ADMIN") {
+    const { rol, villa_id } = req.user;
+
+    if (esAdmin(rol)) {
       const result = await pool.query(
         `SELECT 
            p.id, p.nombre, p.rut, p.direccion, p.telefono, p.correo,
@@ -138,20 +144,32 @@ router.get("/", async (req, res) => {
       return res.json(result.rows);
     }
 
-    // DIRIGENTE: solo su villa
-    const villaId = req.user.villa_id;
-    const result = await pool.query(
-      `SELECT 
-         p.id, p.nombre, p.rut, p.direccion, p.telefono, p.correo,
-         p.villa_id,
-         v.nombre AS villa_nombre
-       FROM personas p
-       JOIN villas v ON v.id = p.villa_id
-       WHERE p.villa_id = $1
-       ORDER BY p.nombre`,
-      [villaId]
-    );
-    res.json(result.rows);
+    if (rol === "DIRIGENTE") {
+      if (!villa_id) {
+        return res.status(400).json({
+          message:
+            "No se ha definido una villa asociada al dirigente. Contacte al administrador.",
+        });
+      }
+
+      const result = await pool.query(
+        `SELECT 
+           p.id, p.nombre, p.rut, p.direccion, p.telefono, p.correo,
+           p.villa_id,
+           v.nombre AS villa_nombre
+         FROM personas p
+         JOIN villas v ON v.id = p.villa_id
+         WHERE p.villa_id = $1
+         ORDER BY p.nombre`,
+        [villa_id]
+      );
+      return res.json(result.rows);
+    }
+
+    // Rol desconocido
+    return res.status(403).json({
+      message: "No tiene permisos para ver el listado de personas.",
+    });
   } catch (err) {
     console.error("Error GET /api/personas:", err);
     res.status(500).json({ message: "Error interno del servidor" });
@@ -160,7 +178,6 @@ router.get("/", async (req, res) => {
 
 /* ==========================================
    POST /api/personas  -> crear persona
-   (respeta cupo + validaciones)
 ========================================== */
 router.post(
   "/",
@@ -194,7 +211,6 @@ router.post(
       .optional({ checkFalsy: true })
       .isLength({ max: 255 })
       .withMessage("Dirección demasiado larga"),
-    // Para ADMIN, villa_id será obligatorio; para DIRIGENTE se ignora (se usa su propia villa)
     body("villa_id")
       .optional()
       .isInt({ min: 1 })
@@ -203,13 +219,14 @@ router.post(
   handleValidationErrors,
   async (req, res) => {
     const { nombre, rut, direccion, telefono, correo, villa_id } = req.body;
+    const { rol, villa_id: userVillaId, id: usuarioId } = req.user;
 
     // Determinar villa a usar según rol
     let villaId = null;
 
-    if (req.user.rol === "DIRIGENTE") {
-      villaId = req.user.villa_id;
-    } else if (req.user.rol === "ADMIN") {
+    if (rol === "DIRIGENTE") {
+      villaId = userVillaId;
+    } else if (esAdmin(rol)) {
       villaId = villa_id;
     }
 
@@ -238,7 +255,7 @@ router.post(
       const nueva = insertRes.rows[0];
 
       await registrarLog({
-        usuarioId: req.user.id,
+        usuarioId,
         accion: "CREATE_PERSONA",
         entidad: "PERSONA",
         entidadId: nueva.id,
@@ -250,6 +267,12 @@ router.post(
       res.status(201).json(nueva);
     } catch (err) {
       console.error("Error POST /api/personas:", err);
+
+      if (err.message === "Villa no encontrada") {
+        return res
+          .status(400)
+          .json({ message: "La villa especificada no existe" });
+      }
 
       // Unique constraint, por ejemplo rut único
       if (err.code === "23505") {
@@ -304,9 +327,11 @@ router.put(
   async (req, res) => {
     const personaId = parseInt(req.params.id, 10);
     const { nombre, rut, direccion, telefono, correo } = req.body;
+    const { rol, villa_id: userVillaId, id: usuarioId } = req.user;
+    const isDirigente = rol === "DIRIGENTE";
 
     try {
-      // Buscar estado anterior y validar permisos
+      // Buscar estado anterior
       const beforeRes = await pool.query(
         `SELECT 
            p.id, p.nombre, p.rut, p.direccion, p.telefono, p.correo, p.villa_id
@@ -322,7 +347,7 @@ router.put(
       const before = beforeRes.rows[0];
 
       // DIRIGENTE solo puede tocar su villa
-      if (req.user.rol === "DIRIGENTE" && before.villa_id !== req.user.villa_id) {
+      if (isDirigente && before.villa_id !== userVillaId) {
         return res
           .status(403)
           .json({ message: "No tienes permiso para editar esta persona" });
@@ -343,7 +368,7 @@ router.put(
       const updated = updateRes.rows[0];
 
       await registrarLog({
-        usuarioId: req.user.id,
+        usuarioId,
         accion: "UPDATE_PERSONA",
         entidad: "PERSONA",
         entidadId: updated.id,
@@ -376,6 +401,8 @@ router.delete(
   handleValidationErrors,
   async (req, res) => {
     const personaId = parseInt(req.params.id, 10);
+    const { rol, villa_id: userVillaId, id: usuarioId } = req.user;
+    const isDirigente = rol === "DIRIGENTE";
 
     try {
       const beforeRes = await pool.query(
@@ -392,7 +419,7 @@ router.delete(
 
       const before = beforeRes.rows[0];
 
-      if (req.user.rol === "DIRIGENTE" && before.villa_id !== req.user.villa_id) {
+      if (isDirigente && before.villa_id !== userVillaId) {
         return res
           .status(403)
           .json({ message: "No tienes permiso para eliminar esta persona" });
@@ -407,7 +434,7 @@ router.delete(
       }
 
       await registrarLog({
-        usuarioId: req.user.id,
+        usuarioId,
         accion: "DELETE_PERSONA",
         entidad: "PERSONA",
         entidadId: before.id,

@@ -14,32 +14,38 @@ import NavbarUser from "../components/NavbarUser";
 import { AuthContext } from "../context/AuthContext";
 
 export default function AdminVillas() {
-  const { token } = useContext(AuthContext);
+  const { token, authFetch } = useContext(AuthContext);
 
   const [villas, setVillas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [showModal, setShowModal] = useState(false);
+  
   const [editingVilla, setEditingVilla] = useState(null);
   const [form, setForm] = useState({
     nombre: "",
     cupo_maximo: 0,
   });
+  const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // NUEVO: estados para eliminación
+  // Estados para eliminación
   const [showConfirmVilla, setShowConfirmVilla] = useState(false);
   const [villaToDelete, setVillaToDelete] = useState(null);
   const [deletingVilla, setDeletingVilla] = useState(false);
 
+  // ==========================
+  // Carga inicial de villas
+  // ==========================
   const fetchVillas = async () => {
     setLoading(true);
     setError("");
+    setSuccess("");
+
     try {
-      const res = await fetch("/api/villas", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authFetch("/api/villas");
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -58,11 +64,38 @@ export default function AdminVillas() {
 
   useEffect(() => {
     if (token) fetchVillas();
-  }, [token]);
+  }, [token, authFetch]);
 
+  // ==========================
+  // Validación frontend
+  // ==========================
+  const validateForm = (data) => {
+    const errors = {};
+
+    if (!data.nombre.trim()) {
+      errors.nombre = "El nombre de la villa es obligatorio";
+    } else if (data.nombre.trim().length < 3) {
+      errors.nombre = "El nombre debe tener al menos 3 caracteres";
+    }
+
+    const cupoNum = Number(data.cupo_maximo);
+    if (Number.isNaN(cupoNum) || cupoNum < 0) {
+      errors.cupo_maximo =
+        "El cupo máximo debe ser un número mayor o igual a 0";
+    }
+
+    return errors;
+  };
+
+  // ==========================
+  // Manejo de formularios / modales
+  // ==========================
   const openNewModal = () => {
     setEditingVilla(null);
     setForm({ nombre: "", cupo_maximo: 0 });
+    setFormErrors({});
+    setError("");
+    setSuccess("");
     setShowModal(true);
   };
 
@@ -72,28 +105,44 @@ export default function AdminVillas() {
       nombre: villa.nombre,
       cupo_maximo: villa.cupo_maximo ?? 0,
     });
+    setFormErrors({});
+    setError("");
+    setSuccess("");
     setShowModal(true);
   };
 
   const closeModal = () => {
+    if (saving) return;
     setShowModal(false);
     setEditingVilla(null);
     setForm({ nombre: "", cupo_maximo: 0 });
+    setFormErrors({});
   };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    setError("");
   };
 
   const handleSaveVilla = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError("");
+    setSuccess("");
+    setFormErrors({});
+
+    const errors = validateForm(form);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setSaving(false);
+      return;
+    }
 
     try {
       const payload = {
-        nombre: form.nombre,
+        nombre: form.nombre.trim(),
         cupo_maximo: Number(form.cupo_maximo) || 0,
       };
 
@@ -102,28 +151,42 @@ export default function AdminVillas() {
         : "/api/villas";
       const method = editingVilla ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(payload),
       });
 
+      const data = await res.json().catch(() => null);
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Error al guardar villa");
+        if (res.status === 400 && data?.errors) {
+          const backendErrors = {};
+          for (const err of data.errors) {
+            if (err.path) {
+              backendErrors[err.path] = err.msg || "Valor inválido";
+            }
+          }
+          setFormErrors(backendErrors);
+          setError(data?.message || "Datos inválidos");
+        } else if (res.status === 409) {
+          setError(data?.message || "Error de conflicto al guardar la villa");
+        } else {
+          setError(data?.message || "Error al guardar villa");
+        }
+        setSaving(false);
+        return;
       }
 
-      const saved = await res.json();
+      const saved = data;
 
       if (editingVilla) {
         setVillas((prev) =>
-          prev.map((v) => (v.id === saved.id ? saved : v))
+          prev.map((v) => (v.id === saved.id ? { ...v, ...saved } : v))
         );
+        setSuccess("Villa actualizada correctamente");
       } else {
         setVillas((prev) => [...prev, saved]);
+        setSuccess("Villa creada correctamente");
       }
 
       closeModal();
@@ -135,15 +198,18 @@ export default function AdminVillas() {
     }
   };
 
-  // ============================
+  // ==========================
   // Eliminar villa (con modal)
-  // ============================
+  // ==========================
   const handleAskDeleteVilla = (villa) => {
     setVillaToDelete(villa);
     setShowConfirmVilla(true);
+    setError("");
+    setSuccess("");
   };
 
   const handleCloseConfirmVilla = () => {
+    if (deletingVilla) return;
     setShowConfirmVilla(false);
     setVillaToDelete(null);
   };
@@ -153,21 +219,23 @@ export default function AdminVillas() {
 
     setDeletingVilla(true);
     setError("");
+    setSuccess("");
 
     try {
-      const res = await fetch(`/api/villas/${villaToDelete.id}`, {
+      const res = await authFetch(`/api/villas/${villaToDelete.id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
 
+      const data = await res.json().catch(() => null);
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Error al eliminar villa");
+        setError(data?.message || "Error al eliminar villa");
+        setDeletingVilla(false);
+        return;
       }
 
       setVillas((prev) => prev.filter((v) => v.id !== villaToDelete.id));
+      setSuccess("Villa eliminada correctamente");
       handleCloseConfirmVilla();
     } catch (err) {
       console.error(err);
@@ -183,20 +251,35 @@ export default function AdminVillas() {
       <Container className="mt-4">
         <Row className="mb-3">
           <Col>
-            <h2>Administración de villas</h2>
+            <h2>Administración de JJVV</h2>
             <p>
-              Aquí puedes crear o editar villas y definir el cupo máximo de personas
-              que pueden inscribirse en cada una.
+              Aquí puedes crear o editar juntas de vecino y definir el cupo máximo de
+              personas que pueden inscribirse en cada una.
             </p>
           </Col>
         </Row>
 
-        {error && (
+        {(error || success) && (
           <Row className="mb-3">
             <Col>
-              <Alert variant="danger" onClose={() => setError("")} dismissible>
-                {error}
-              </Alert>
+              {error && (
+                <Alert
+                  variant="danger"
+                  onClose={() => setError("")}
+                  dismissible
+                >
+                  {error}
+                </Alert>
+              )}
+              {success && (
+                <Alert
+                  variant="success"
+                  onClose={() => setSuccess("")}
+                  dismissible
+                >
+                  {success}
+                </Alert>
+              )}
             </Col>
           </Row>
         )}
@@ -204,7 +287,7 @@ export default function AdminVillas() {
         <Row className="mb-3">
           <Col>
             <Button variant="primary" onClick={openNewModal}>
-              + Nueva villa
+              + Nueva junta de vecinos
             </Button>
           </Col>
         </Row>
@@ -212,7 +295,7 @@ export default function AdminVillas() {
         {loading ? (
           <div className="d-flex align-items-center">
             <Spinner animation="border" size="sm" className="me-2" />
-            <span>Cargando villas...</span>
+            <span>Cargando jjvv...</span>
           </div>
         ) : (
           <Table striped bordered hover responsive>
@@ -256,7 +339,7 @@ export default function AdminVillas() {
               {!villas.length && (
                 <tr>
                   <td colSpan={4} className="text-center">
-                    No hay villas registradas.
+                    No hay jjvv registradas.
                   </td>
                 </tr>
               )}
@@ -268,20 +351,23 @@ export default function AdminVillas() {
       {/* Modal crear / editar */}
       <Modal show={showModal} onHide={closeModal}>
         <Form onSubmit={handleSaveVilla}>
-          <Modal.Header closeButton>
+          <Modal.Header closeButton={!saving}>
             <Modal.Title>
               {editingVilla ? "Editar villa" : "Nueva villa"}
             </Modal.Title>
           </Modal.Header>
           <Modal.Body>
             <Form.Group className="mb-3">
-              <Form.Label>Nombre de la villa</Form.Label>
+              <Form.Label>Nombre de la junta de vecinos</Form.Label>
               <Form.Control
                 name="nombre"
                 value={form.nombre}
                 onChange={handleFormChange}
-                required
+                isInvalid={!!formErrors.nombre}
               />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.nombre}
+              </Form.Control.Feedback>
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -292,14 +378,18 @@ export default function AdminVillas() {
                 min="0"
                 value={form.cupo_maximo}
                 onChange={handleFormChange}
+                isInvalid={!!formErrors.cupo_maximo}
               />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.cupo_maximo}
+              </Form.Control.Feedback>
               <Form.Text className="text-muted">
                 0 significa sin límite.
               </Form.Text>
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={closeModal}>
+            <Button variant="secondary" onClick={closeModal} disabled={saving}>
               Cancelar
             </Button>
             <Button type="submit" variant="primary" disabled={saving}>
@@ -310,20 +400,25 @@ export default function AdminVillas() {
       </Modal>
 
       {/* Modal de confirmación de eliminación */}
-      <Modal show={showConfirmVilla} onHide={handleCloseConfirmVilla} centered>
-        <Modal.Header closeButton>
+      <Modal
+        show={showConfirmVilla}
+        onHide={handleCloseConfirmVilla}
+        centered
+      >
+        <Modal.Header closeButton={!deletingVilla}>
           <Modal.Title>Confirmar eliminación</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {villaToDelete ? (
             <>
-              <p>¿Seguro que deseas eliminar la siguiente villa?</p>
+              <p>¿Seguro que deseas eliminar la siguiente jjvv?</p>
               <p>
                 <strong>{villaToDelete.nombre}</strong>
                 <br />
                 <small>
                   Cupo máximo:{" "}
-                  {villaToDelete.cupo_maximo && villaToDelete.cupo_maximo > 0
+                  {villaToDelete.cupo_maximo &&
+                  villaToDelete.cupo_maximo > 0
                     ? villaToDelete.cupo_maximo
                     : "Sin límite"}
                 </small>
@@ -337,7 +432,11 @@ export default function AdminVillas() {
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={handleCloseConfirmVilla}>
+          <Button
+            variant="secondary"
+            onClick={handleCloseConfirmVilla}
+            disabled={deletingVilla}
+          >
             Cancelar
           </Button>
           <Button

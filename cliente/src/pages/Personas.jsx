@@ -45,11 +45,22 @@ export default function Personas() {
   const [personaToDelete, setPersonaToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Modal de cupo máximo alcanzado (para dirigente y admin)
+  const [showCupoMaxModal, setShowCupoMaxModal] = useState(false);
+  const [cupoMaxData, setCupoMaxData] = useState({
+    actual: 0,
+    max: 0,
+    contexto: "",
+  });
+
   // Filtros y paginación
   const [search, setSearch] = useState("");
   const [filterVillaId, setFilterVillaId] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  // Cupo máximo para el dirigente (si no viene, por defecto 2)
+  const CUPO_MAX = user?.cupo_maximo || 2;
 
   // ==============================
   // Carga inicial: personas + villas
@@ -92,7 +103,7 @@ export default function Personas() {
     if (token) {
       fetchData();
     }
-  }, [token, authFetch]);
+  }, [token, authFetch, user]);
 
   // ==============================
   // Validación frontend
@@ -107,7 +118,7 @@ export default function Personas() {
       errors.nombre = "El nombre debe tener al menos 3 caracteres";
     }
 
-    // RUT (básico, el cálculo real lo hace el backend)
+    // RUT
     if (!data.rut.trim()) {
       errors.rut = "El RUT es obligatorio";
     } else {
@@ -145,6 +156,18 @@ export default function Personas() {
   // Manejo de formularios / modales
   // ==============================
   const openNewModal = () => {
+    // Si es dirigente y ya alcanzó el cupo máximo, no abre el formulario
+    if (user?.rol === "DIRIGENTE" && personas.length >= CUPO_MAX) {
+      setCupoMaxData({
+        actual: personas.length,
+        max: CUPO_MAX,
+        contexto:
+          "Ya has inscrito el número máximo permitido de personas para tu junta de vecinos.",
+      });
+      setShowCupoMaxModal(true);
+      return;
+    }
+
     setEditingPersona(null);
     setForm({
       nombre: "",
@@ -222,6 +245,39 @@ export default function Personas() {
       return;
     }
 
+    // Villa destino (para admin o dirigente)
+    const targetVillaId =
+      user?.rol === "ADMIN"
+        ? form.villa_id
+          ? Number(form.villa_id)
+          : null
+        : Number(user?.villa_id);
+
+    // =====================
+    // Validación de cupo para ADMIN al crear nueva persona
+    // =====================
+    if (user?.rol === "ADMIN" && !isEdit && targetVillaId) {
+      const villa = villas.find((v) => Number(v.id) === targetVillaId);
+      const villaCupoMax = villa?.cupo_maximo ?? null;
+
+      if (villaCupoMax != null) {
+        const inscritosEnVilla = personas.filter(
+          (p) => Number(p.villa_id) === targetVillaId
+        ).length;
+
+        if (inscritosEnVilla >= villaCupoMax) {
+          setCupoMaxData({
+            actual: inscritosEnVilla,
+            max: villaCupoMax,
+            contexto: `Ya se alcanzó el cupo máximo de personas para la villa "${villa?.nombre || "seleccionada"}".`,
+          });
+          setShowCupoMaxModal(true);
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     try {
       const payload = {
         nombre: form.nombre,
@@ -229,12 +285,10 @@ export default function Personas() {
         direccion: form.direccion,
         telefono: form.telefono,
         correo: form.correo,
-        // Para ADMIN se manda villa_id; para DIRIGENTE el backend usa req.user.villa_id
-        villa_id:
-          user?.rol === "ADMIN" && form.villa_id
-            ? Number(form.villa_id)
-            : null,
+        villa_id: targetVillaId,
       };
+
+      console.log("Enviando payload:", payload);
 
       const url = editingPersona
         ? `/api/personas/${editingPersona.id}`
@@ -243,9 +297,6 @@ export default function Personas() {
 
       const res = await authFetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(payload),
       });
 
@@ -253,7 +304,6 @@ export default function Personas() {
 
       if (!res.ok) {
         if (res.status === 400 && data?.errors) {
-          // Errores express-validator
           const backendErrors = {};
           for (const err of data.errors) {
             if (err.path) {
@@ -263,7 +313,6 @@ export default function Personas() {
           setFormErrors(backendErrors);
           setError(data?.message || "Datos inválidos");
         } else if (res.status === 409) {
-          // Conflictos, por ejemplo RUT duplicado
           setError(data?.message || "Datos en conflicto");
           if (data?.message?.toLowerCase().includes("rut")) {
             setFormErrors((prev) => ({
@@ -429,9 +478,12 @@ export default function Personas() {
   // ==============================
   // Render
   // ==============================
+  const nombreVillaDirigente = villas.find(
+    (v) => v.id == user?.villa_id
+  )?.nombre;
   const tituloVilla =
     user?.rol === "DIRIGENTE"
-      ? "Listado de personas de tu villa"
+      ? `Listado de la junta de vecinos   ${nombreVillaDirigente || ""}`
       : "Listado de personas de todas las villas";
 
   return (
@@ -453,6 +505,21 @@ export default function Personas() {
             </Button>
           </Col>
         </Row>
+
+        {/* Contador de cupos para DIRIGENTE */}
+        {user?.rol === "DIRIGENTE" && (
+          <Row className="mb-3 justify-content-end">
+            <Col xs="auto">
+              <div className="d-flex align-items-center p-2 px-3 bg-light border rounded shadow-sm">
+                <span className="fw-bold me-2">Cupos:</span>
+                <span className="badge bg-primary fs-6 me-1">
+                  {personas.length}
+                </span>
+                <span className="fw-bold">/ {CUPO_MAX}</span>
+              </div>
+            </Col>
+          </Row>
+        )}
 
         {error && (
           <Alert variant="danger" onClose={() => setError("")} dismissible>
@@ -534,7 +601,11 @@ export default function Personas() {
                     <td>{p.direccion}</td>
                     <td>{p.telefono}</td>
                     <td>{p.correo}</td>
-                    <td>{p.villa_nombre || "—"}</td>
+                    <td>
+                      {p.villa_nombre ||
+                        villas.find((v) => v.id === p.villa_id)?.nombre ||
+                        "—"}
+                    </td>
                     <td>
                       <Button
                         variant="warning"
@@ -564,7 +635,6 @@ export default function Personas() {
               </tbody>
             </Table>
 
-            {/* Paginación */}
             {totalPages > 1 && (
               <div className="d-flex justify-content-center">
                 <Pagination>
@@ -635,7 +705,7 @@ export default function Personas() {
                 placeholder="12345678-9"
                 isInvalid={!!formErrors.rut}
               />
-            <Form.Control.Feedback type="invalid">
+              <Form.Control.Feedback type="invalid">
                 {formErrors.rut}
               </Form.Control.Feedback>
             </Form.Group>
@@ -755,6 +825,39 @@ export default function Personas() {
             disabled={deleting}
           >
             {deleting ? "Eliminando..." : "Eliminar persona"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal de cupo máximo alcanzado */}
+      <Modal
+        show={showCupoMaxModal}
+        onHide={() => setShowCupoMaxModal(false)}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Cupo máximo alcanzado</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>
+            {cupoMaxData.contexto ||
+              "Ya has inscrito el número máximo permitido de personas."}
+          </p>
+          <p className="mb-0">
+            Cupo actual:{" "}
+            <strong>
+              {cupoMaxData.actual} / {cupoMaxData.max}
+            </strong>
+            .
+          </p>
+          <p className="text-muted mt-2 mb-0">
+            Si necesitas agregar a otra persona, primero debes eliminar a una
+            persona ya inscrita o consultar con el administrador.
+          </p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="primary" onClick={() => setShowCupoMaxModal(false)}>
+            Aceptar
           </Button>
         </Modal.Footer>
       </Modal>

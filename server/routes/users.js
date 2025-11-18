@@ -2,7 +2,10 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/db");
-const { authRequired, adminOnly } = require("../config/middleware/authMiddleware");
+const {
+  authRequired,
+  adminOnly,
+} = require("../config/middleware/authMiddleware");
 const { body, param, validationResult } = require("express-validator");
 
 const router = express.Router();
@@ -61,6 +64,15 @@ async function registrarLog({
   } catch (err) {
     console.error("Error registrando log:", err);
   }
+}
+
+// Verificar que la villa exista (para DIRIGENTE)
+async function verificarVillaExiste(villaId) {
+  if (!villaId) return false;
+  const res = await pool.query("SELECT id FROM villas WHERE id = $1", [
+    villaId,
+  ]);
+  return res.rowCount > 0;
 }
 
 /* ==========================================
@@ -129,11 +141,23 @@ router.post(
   async (req, res) => {
     let { nombre, email, password, rol, villa_id } = req.body;
 
+    // Normalizar rol por seguridad
+    rol = rol.toString().toUpperCase();
+
     try {
-      if (rol === "DIRIGENTE" && !villa_id) {
-        return res
-          .status(400)
-          .json({ message: "villa_id es requerido para DIRIGENTE" });
+      if (rol === "DIRIGENTE") {
+        if (!villa_id) {
+          return res
+            .status(400)
+            .json({ message: "villa_id es requerido para DIRIGENTE" });
+        }
+
+        const existe = await verificarVillaExiste(villa_id);
+        if (!existe) {
+          return res
+            .status(400)
+            .json({ message: "La villa seleccionada no existe" });
+        }
       }
 
       if (rol === "ADMIN") {
@@ -145,7 +169,7 @@ router.post(
       const insertUser = await pool.query(
         `INSERT INTO users (nombre, email, password_hash, rol, villa_id)
          VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, nombre, email, rol, villa_id`,
+         RETURNING id, nombre, email, rol, villa_id, activo`,
         [nombre, email, password_hash, rol, villa_id || null]
       );
 
@@ -213,6 +237,9 @@ router.put(
     const userId = parseInt(req.params.id, 10);
     let { nombre, email, password, rol, villa_id } = req.body;
 
+    // Normalizar rol por seguridad
+    rol = rol.toString().toUpperCase();
+
     try {
       // Estado anterior
       const beforeRes = await pool.query(
@@ -226,10 +253,19 @@ router.put(
       }
       const before = beforeRes.rows[0];
 
-      if (rol === "DIRIGENTE" && !villa_id) {
-        return res
-          .status(400)
-          .json({ message: "villa_id es requerido para DIRIGENTE" });
+      if (rol === "DIRIGENTE") {
+        if (!villa_id) {
+          return res
+            .status(400)
+            .json({ message: "villa_id es requerido para DIRIGENTE" });
+        }
+
+        const existe = await verificarVillaExiste(villa_id);
+        if (!existe) {
+          return res
+            .status(400)
+            .json({ message: "La villa seleccionada no existe" });
+        }
       }
 
       const villaToUse = rol === "ADMIN" ? null : villa_id || null;
@@ -300,6 +336,13 @@ router.delete(
       }
 
       const before = beforeRes.rows[0];
+
+      // Opcional: evitar que el admin se desactive a sí mismo
+      if (before.id === req.user.id) {
+        return res.status(400).json({
+          message: "No puede desactivar su propio usuario mientras está conectado.",
+        });
+      }
 
       const updateRes = await pool.query(
         `UPDATE users
