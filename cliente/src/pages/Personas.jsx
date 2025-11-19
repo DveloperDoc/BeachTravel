@@ -10,6 +10,7 @@ import {
   Alert,
   Spinner,
   Pagination,
+  InputGroup,
 } from "react-bootstrap";
 import NavbarUser from "../components/NavbarUser";
 import { AuthContext } from "../context/AuthContext";
@@ -63,6 +64,44 @@ export default function Personas() {
   const CUPO_MAX = user?.cupo_maximo || 2;
 
   // ==============================
+  // Helpers: RUT y teléfono
+  // ==============================
+  const validarRutChileno = (rutRaw) => {
+    if (!rutRaw) return false;
+
+    const rut = rutRaw.replace(/\./g, "").replace(/-/g, "").toUpperCase();
+    if (rut.length < 2) return false;
+
+    const cuerpo = rut.slice(0, -1);
+    const dv = rut.slice(-1);
+
+    if (!/^\d+$/.test(cuerpo)) return false;
+
+    let suma = 0;
+    let multiplo = 2;
+
+    for (let i = cuerpo.length - 1; i >= 0; i--) {
+      suma += parseInt(cuerpo[i], 10) * multiplo;
+      multiplo = multiplo === 7 ? 2 : multiplo + 1;
+    }
+
+    const resto = suma % 11;
+    const dvCalcNum = 11 - resto;
+    let dvCalc;
+
+    if (dvCalcNum === 11) dvCalc = "0";
+    else if (dvCalcNum === 10) dvCalc = "K";
+    else dvCalc = String(dvCalcNum);
+
+    return dv === dvCalc;
+  };
+
+  const normalizarTelefono9 = (value) => {
+    // Solo dígitos, máximo 9
+    return value.replace(/\D/g, "").slice(0, 9);
+  };
+
+  // ==============================
   // Carga inicial: personas + villas
   // ==============================
   useEffect(() => {
@@ -111,33 +150,36 @@ export default function Personas() {
   const validateForm = (data, isEdit) => {
     const errors = {};
 
+    // Nombre
     if (!data.nombre.trim()) {
       errors.nombre = "El nombre es obligatorio";
     } else if (data.nombre.trim().length < 3) {
       errors.nombre = "El nombre debe tener al menos 3 caracteres";
     }
 
+    // RUT
     if (!data.rut.trim()) {
       errors.rut = "El RUT es obligatorio";
-    } else {
-      const clean = data.rut.replace(/[.\-]/g, "");
-      if (clean.length < 7 || clean.length > 9) {
-        errors.rut = "El RUT parece tener un largo inválido";
-      }
+    } else if (!validarRutChileno(data.rut)) {
+      errors.rut = "RUT inválido";
     }
 
+    // Correo
     if (data.correo && data.correo.trim() !== "") {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.correo)) {
         errors.correo = "Correo electrónico inválido";
       }
     }
 
+    // Teléfono (opcional, pero si se ingresa debe tener 9 dígitos)
     if (data.telefono && data.telefono.trim() !== "") {
-      if (!/^[0-9+\s-]{6,15}$/.test(data.telefono)) {
-        errors.telefono = "Teléfono inválido";
+      const soloDigitos = normalizarTelefono9(data.telefono);
+      if (soloDigitos.length !== 9) {
+        errors.telefono = "Debe ingresar 9 dígitos (sin +56, solo número celular)";
       }
     }
 
+    // Villa solo editable/obligatoria para ADMIN
     if (user?.rol === "ADMIN") {
       if (!data.villa_id) {
         errors.villa_id = "Debe seleccionar una villa";
@@ -210,9 +252,15 @@ export default function Personas() {
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
+
+    let newValue = value;
+    if (name === "telefono") {
+      newValue = normalizarTelefono9(value);
+    }
+
     setForm((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: newValue,
     }));
     setFormErrors((prev) => ({
       ...prev,
@@ -246,6 +294,7 @@ export default function Personas() {
           : null
         : Number(user?.villa_id);
 
+    // Validación de cupo para ADMIN al crear
     if (user?.rol === "ADMIN" && !isEdit && targetVillaId) {
       const villa = villas.find((v) => Number(v.id) === targetVillaId);
       const villaCupoMax = villa?.cupo_maximo ?? null;
@@ -275,7 +324,9 @@ export default function Personas() {
         nombre: form.nombre,
         rut: form.rut,
         direccion: form.direccion,
-        telefono: form.telefono,
+        telefono: form.telefono
+          ? normalizarTelefono9(form.telefono)
+          : "", // guardar solo 9 dígitos
         correo: form.correo,
         villa_id: targetVillaId,
       };
@@ -435,7 +486,7 @@ export default function Personas() {
         Nombre: p.nombre,
         RUT: p.rut,
         Dirección: p.direccion || "",
-        Teléfono: p.telefono || "",
+        Teléfono: p.telefono ? `+56 ${p.telefono}` : "",
         Correo: p.correo || "",
         Villa: p.villa_nombre || "",
       }));
@@ -618,7 +669,7 @@ export default function Personas() {
                     <td>{p.nombre}</td>
                     <td>{p.rut}</td>
                     <td>{p.direccion}</td>
-                    <td>{p.telefono}</td>
+                    <td>{p.telefono ? `+56 ${p.telefono}` : ""}</td>
                     <td>{p.correo}</td>
                     <td>
                       {p.villa_nombre ||
@@ -725,6 +776,9 @@ export default function Personas() {
                 placeholder="12345678-9"
                 isInvalid={!!formErrors.rut}
               />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.rut}
+              </Form.Control.Feedback>
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -742,15 +796,24 @@ export default function Personas() {
 
             <Form.Group className="mb-3">
               <Form.Label>Teléfono</Form.Label>
-              <Form.Control
-                name="telefono"
-                value={form.telefono}
-                onChange={handleFormChange}
-                isInvalid={!!formErrors.telefono}
-              />
-              <Form.Control.Feedback type="invalid">
-                {formErrors.telefono}
-              </Form.Control.Feedback>
+              <InputGroup>
+                <InputGroup.Text>(+56)</InputGroup.Text>
+                <Form.Control
+                  name="telefono"
+                  value={form.telefono}
+                  onChange={handleFormChange}
+                  isInvalid={!!formErrors.telefono}
+                  inputMode="tel"
+                  maxLength={9}
+                  placeholder="9 dígitos"
+                />
+                <Form.Control.Feedback type="invalid">
+                  {formErrors.telefono}
+                </Form.Control.Feedback>
+              </InputGroup>
+              <Form.Text className="text-muted">
+                Ingrese solo 9 dígitos del celular, sin el +56.
+              </Form.Text>
             </Form.Group>
 
             <Form.Group className="mb-3">
