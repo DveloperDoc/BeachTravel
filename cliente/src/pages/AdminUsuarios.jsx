@@ -37,7 +37,6 @@ export default function AdminUsuarios() {
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Modal de confirmación
   const [showConfirm, setShowConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -90,28 +89,24 @@ export default function AdminUsuarios() {
   const validateForm = (data, isEdit) => {
     const errors = {};
 
-    // Nombre
     if (!data.nombre.trim()) {
       errors.nombre = "El nombre es requerido";
     } else if (data.nombre.trim().length < 3) {
       errors.nombre = "El nombre debe tener al menos 3 caracteres";
     }
 
-    // Email
     if (!data.email.trim()) {
       errors.email = "El email es requerido";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
       errors.email = "Email inválido";
     }
 
-    // Rol
     if (!data.rol) {
       errors.rol = "El rol es requerido";
     } else if (!["ADMIN", "DIRIGENTE"].includes(data.rol)) {
       errors.rol = "Rol inválido";
     }
 
-    // Password: obligatoria en nuevo usuario; opcional en edición
     if (!isEdit) {
       if (!data.password || data.password.trim() === "") {
         errors.password = "La contraseña es requerida";
@@ -124,7 +119,6 @@ export default function AdminUsuarios() {
       }
     }
 
-    // Villa para DIRIGENTE
     if (data.rol === "DIRIGENTE") {
       if (!data.villa_id) {
         errors.villa_id = "Debe seleccionar una villa para el dirigente";
@@ -410,60 +404,76 @@ export default function AdminUsuarios() {
   return (
     <>
       <NavbarUser />
-      <Container className="mt-4">
-        <Row className="mb-3">
-          <Col>
-            <h2>Administración de usuarios</h2>
-            <p>
+
+      <Container fluid className="py-4 px-3 px-md-4">
+        {/* Título + botón logs */}
+        <Row className="mb-3 align-items-center">
+          <Col xs={12} md={8} className="mb-2 mb-md-0">
+            <h2 className="mb-1">Administración de usuarios</h2>
+            <p className="mb-0 text-muted">
               Aquí se gestiona la creación, edición y eliminación de dirigentes
               y administradores.
             </p>
           </Col>
-          <Col className="text-end">
-            <Link to="/admin/logs" className="btn btn-outline-secondary mt-2">
+          <Col
+            xs={12}
+            md={4}
+            className="d-flex justify-content-md-end justify-content-start"
+          >
+            <Link
+              to="/admin/logs"
+              className="btn btn-outline-secondary w-100 w-md-auto mt-2 mt-md-0"
+            >
               Ver registro de actividad
             </Link>
           </Col>
         </Row>
 
+        {/* Alertas */}
         {error && (
-          <Alert variant="danger" onClose={() => setError("")} dismissible>
+          <Alert
+            variant="danger"
+            onClose={() => setError("")}
+            dismissible
+            className="mb-3"
+          >
             {error}
           </Alert>
         )}
         {success && (
-          <Alert variant="success" onClose={() => setSuccess("")} dismissible>
+          <Alert
+            variant="success"
+            onClose={() => setSuccess("")}
+            dismissible
+            className="mb-3"
+          >
             {success}
           </Alert>
         )}
 
+        {/* Botones principales */}
         <Row className="mb-3">
           <Col>
-            <Button
-              variant="primary"
-              onClick={openNewUserModal}
-              className="me-2"
-            >
-              + Nuevo usuario
-            </Button>
-            <Button
-              variant="success"
-              onClick={exportDirigentesExcel}
-              className="me-2"
-            >
-              Exportar dirigentes
-            </Button>
-            <Button
-              variant="outline-success"
-              onClick={exportIntegrantesExcel}
-            >
-              Exportar integrantes de villas
-            </Button>
+            <div className="d-flex flex-wrap gap-2">
+              <Button variant="primary" onClick={openNewUserModal}>
+                + Nuevo usuario
+              </Button>
+              <Button variant="success" onClick={exportDirigentesExcel}>
+                Exportar dirigentes
+              </Button>
+              <Button
+                variant="outline-success"
+                onClick={exportIntegrantesExcel}
+              >
+                Exportar integrantes de villas
+              </Button>
+            </div>
           </Col>
         </Row>
 
+        {/* Tabla / loading */}
         {loading ? (
-          <div className="d-flex align-items-center">
+          <div className="d-flex align-items-center justify-content-center py-4">
             <Spinner animation="border" size="sm" className="me-2" />
             <span>Cargando usuarios...</span>
           </div>
@@ -476,7 +486,7 @@ export default function AdminUsuarios() {
                 <th>Email</th>
                 <th>Rol</th>
                 <th>Villa</th>
-                <th style={{ width: "160px" }}>Acciones</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -488,21 +498,22 @@ export default function AdminUsuarios() {
                   <td>{u.rol}</td>
                   <td>{u.villa_nombre || "—"}</td>
                   <td>
-                    <Button
-                      variant="warning"
-                      size="sm"
-                      className="me-2"
-                      onClick={() => openEditUserModal(u)}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleAskDeleteUser(u)}
-                    >
-                      Eliminar
-                    </Button>
+                    <div className="d-flex flex-wrap gap-2">
+                      <Button
+                        variant="warning"
+                        size="sm"
+                        onClick={() => openEditUserModal(u)}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleAskDeleteUser(u)}
+                      >
+                        Eliminar
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

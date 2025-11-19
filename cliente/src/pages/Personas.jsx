@@ -111,14 +111,12 @@ export default function Personas() {
   const validateForm = (data, isEdit) => {
     const errors = {};
 
-    // Nombre
     if (!data.nombre.trim()) {
       errors.nombre = "El nombre es obligatorio";
     } else if (data.nombre.trim().length < 3) {
       errors.nombre = "El nombre debe tener al menos 3 caracteres";
     }
 
-    // RUT
     if (!data.rut.trim()) {
       errors.rut = "El RUT es obligatorio";
     } else {
@@ -128,21 +126,18 @@ export default function Personas() {
       }
     }
 
-    // Correo
     if (data.correo && data.correo.trim() !== "") {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.correo)) {
         errors.correo = "Correo electrónico inválido";
       }
     }
 
-    // Teléfono
     if (data.telefono && data.telefono.trim() !== "") {
       if (!/^[0-9+\s-]{6,15}$/.test(data.telefono)) {
         errors.telefono = "Teléfono inválido";
       }
     }
 
-    // Villa solo editable/obligatoria para ADMIN
     if (user?.rol === "ADMIN") {
       if (!data.villa_id) {
         errors.villa_id = "Debe seleccionar una villa";
@@ -156,7 +151,6 @@ export default function Personas() {
   // Manejo de formularios / modales
   // ==============================
   const openNewModal = () => {
-    // Si es dirigente y ya alcanzó el cupo máximo, no abre el formulario
     if (user?.rol === "DIRIGENTE" && personas.length >= CUPO_MAX) {
       setCupoMaxData({
         actual: personas.length,
@@ -245,7 +239,6 @@ export default function Personas() {
       return;
     }
 
-    // Villa destino (para admin o dirigente)
     const targetVillaId =
       user?.rol === "ADMIN"
         ? form.villa_id
@@ -253,9 +246,6 @@ export default function Personas() {
           : null
         : Number(user?.villa_id);
 
-    // =====================
-    // Validación de cupo para ADMIN al crear nueva persona
-    // =====================
     if (user?.rol === "ADMIN" && !isEdit && targetVillaId) {
       const villa = villas.find((v) => Number(v.id) === targetVillaId);
       const villaCupoMax = villa?.cupo_maximo ?? null;
@@ -269,7 +259,9 @@ export default function Personas() {
           setCupoMaxData({
             actual: inscritosEnVilla,
             max: villaCupoMax,
-            contexto: `Ya se alcanzó el cupo máximo de personas para la villa "${villa?.nombre || "seleccionada"}".`,
+            contexto: `Ya se alcanzó el cupo máximo de personas para la villa "${
+              villa?.nombre || "seleccionada"
+            }".`,
           });
           setShowCupoMaxModal(true);
           setSaving(false);
@@ -287,8 +279,6 @@ export default function Personas() {
         correo: form.correo,
         villa_id: targetVillaId,
       };
-
-      console.log("Enviando payload:", payload);
 
       const url = editingPersona
         ? `/api/personas/${editingPersona.id}`
@@ -401,7 +391,6 @@ export default function Personas() {
   const filteredPersonas = useMemo(() => {
     let data = [...personas];
 
-    // Filtro texto (nombre o RUT)
     if (search.trim()) {
       const term = search.trim().toLowerCase();
       data = data.filter(
@@ -411,7 +400,6 @@ export default function Personas() {
       );
     }
 
-    // Filtro villa (solo si ADMIN)
     if (user?.rol === "ADMIN" && filterVillaId) {
       const vid = Number(filterVillaId);
       data = data.filter((p) => Number(p.villa_id) === vid);
@@ -483,23 +471,29 @@ export default function Personas() {
   )?.nombre;
   const tituloVilla =
     user?.rol === "DIRIGENTE"
-      ? `Listado de la junta de vecinos   ${nombreVillaDirigente || ""}`
+      ? `Listado de la junta de vecinos ${nombreVillaDirigente || ""}`
       : "Listado de personas de todas las villas";
 
   return (
     <>
       <NavbarUser />
-      <Container className="mt-4">
-        <Row className="mb-3">
-          <Col>
-            <h2>Personas inscritas</h2>
-            <p>{tituloVilla}</p>
+
+      <Container fluid className="py-4 px-3 px-md-4">
+        {/* Título + botón Excel */}
+        <Row className="mb-3 align-items-center">
+          <Col xs={12} md={8} className="mb-2 mb-md-0">
+            <h2 className="mb-1">Personas inscritas</h2>
+            <p className="mb-0 text-muted">{tituloVilla}</p>
           </Col>
-          <Col className="text-end">
+          <Col
+            xs={12}
+            md={4}
+            className="d-flex justify-content-md-end justify-content-start"
+          >
             <Button
               variant="success"
               onClick={exportPersonasExcel}
-              className="mt-2"
+              className="w-100 w-md-auto"
             >
               Exportar listado a Excel
             </Button>
@@ -508,9 +502,9 @@ export default function Personas() {
 
         {/* Contador de cupos para DIRIGENTE */}
         {user?.rol === "DIRIGENTE" && (
-          <Row className="mb-3 justify-content-end">
-            <Col xs="auto">
-              <div className="d-flex align-items-center p-2 px-3 bg-light border rounded shadow-sm">
+          <Row className="mb-3">
+            <Col xs={12} className="d-flex justify-content-md-end">
+              <div className="d-flex align-items-center p-2 px-3 bg-light border rounded shadow-sm w-100 w-md-auto">
                 <span className="fw-bold me-2">Cupos:</span>
                 <span className="badge bg-primary fs-6 me-1">
                   {personas.length}
@@ -521,28 +515,42 @@ export default function Personas() {
           </Row>
         )}
 
+        {/* Alertas */}
         {error && (
-          <Alert variant="danger" onClose={() => setError("")} dismissible>
+          <Alert
+            variant="danger"
+            onClose={() => setError("")}
+            dismissible
+            className="mb-3"
+          >
             {error}
           </Alert>
         )}
         {success && (
-          <Alert variant="success" onClose={() => setSuccess("")} dismissible>
+          <Alert
+            variant="success"
+            onClose={() => setSuccess("")}
+            dismissible
+            className="mb-3"
+          >
             {success}
           </Alert>
         )}
 
         {/* Filtros */}
-        <Row className="mb-3">
-          <Col md={4} className="mb-2">
+        <Row className="mb-3 g-2 align-items-end">
+          <Col xs={12} md={4}>
+            <Form.Label className="d-md-none">Buscar</Form.Label>
             <Form.Control
               placeholder="Buscar por nombre o RUT..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </Col>
+
           {user?.rol === "ADMIN" && (
-            <Col md={4} className="mb-2">
+            <Col xs={12} md={4}>
+              <Form.Label className="d-md-none">Villa</Form.Label>
               <Form.Select
                 value={filterVillaId}
                 onChange={(e) => setFilterVillaId(e.target.value)}
@@ -556,13 +564,23 @@ export default function Personas() {
               </Form.Select>
             </Col>
           )}
-          <Col md={4} className="text-md-end mb-2">
-            <Button variant="primary" onClick={openNewModal}>
+
+          <Col
+            xs={12}
+            md={4}
+            className="d-flex justify-content-md-end justify-content-start"
+          >
+            <Button
+              variant="primary"
+              onClick={openNewModal}
+              className="w-100 w-md-auto"
+            >
               + Nueva persona
             </Button>
           </Col>
         </Row>
 
+        {/* Info cantidad */}
         <Row className="mb-2">
           <Col>
             <small className="text-muted">
@@ -572,8 +590,9 @@ export default function Personas() {
           </Col>
         </Row>
 
+        {/* Tabla / loading */}
         {loading ? (
-          <div className="d-flex align-items-center">
+          <div className="d-flex align-items-center justify-content-center py-4">
             <Spinner animation="border" size="sm" className="me-2" />
             <span>Cargando personas...</span>
           </div>
@@ -589,7 +608,7 @@ export default function Personas() {
                   <th>Teléfono</th>
                   <th>Correo</th>
                   <th>Villa</th>
-                  <th style={{ width: "150px" }}>Acciones</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -607,21 +626,22 @@ export default function Personas() {
                         "—"}
                     </td>
                     <td>
-                      <Button
-                        variant="warning"
-                        size="sm"
-                        className="me-2"
-                        onClick={() => openEditModal(p)}
-                      >
-                        Editar
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleAskDelete(p)}
-                      >
-                        Eliminar
-                      </Button>
+                      <div className="d-flex flex-wrap gap-2">
+                        <Button
+                          variant="warning"
+                          size="sm"
+                          onClick={() => openEditModal(p)}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleAskDelete(p)}
+                        >
+                          Eliminar
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -705,9 +725,6 @@ export default function Personas() {
                 placeholder="12345678-9"
                 isInvalid={!!formErrors.rut}
               />
-              <Form.Control.Feedback type="invalid">
-                {formErrors.rut}
-              </Form.Control.Feedback>
             </Form.Group>
 
             <Form.Group className="mb-3">

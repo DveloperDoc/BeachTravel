@@ -91,13 +91,11 @@ export default function AdminLogs() {
     }
   };
 
-  // Resumen textual usando el nombre de la entidad afectada
   const buildResumen = (log) => {
     const usuario = log.usuario_nombre || "Usuario desconocido";
     const accionLabel = mapAccionLabel(log.accion);
     const entidadLabel = mapEntidadLabel(log.entidad);
     const nombreAfectado = log.entidad_nombre || entidadLabel;
-
     return `${usuario} realizó: ${accionLabel} sobre "${nombreAfectado}"`;
   };
 
@@ -306,49 +304,68 @@ export default function AdminLogs() {
   return (
     <>
       <NavbarUser />
-      <Container className="mt-4">
-        <Row className="mb-3">
-          <Col>
-            <h2>Registro de actividad</h2>
+
+      <Container fluid className="py-4 px-3 px-md-4">
+        {/* Título + botones */}
+        <Row className="mb-3 align-items-center">
+          <Col xs={12} md={8} className="mb-2 mb-md-0">
+            <h2 className="mb-1">Registro de actividad</h2>
             <p className="mb-0 text-muted">
               Aquí puedes revisar quién hizo qué cambio y en qué momento.
             </p>
           </Col>
-          <Col className="text-end">
-            <Button
-              variant="outline-secondary"
-              className="me-2 mt-2"
-              onClick={() => fetchLogs(limit)}
-              disabled={loading}
-            >
-              Recargar
-            </Button>
-            <Button
-              variant="success"
-              className="mt-2"
-              onClick={exportLogsExcel}
-              disabled={!filteredLogs.length}
-            >
-              Exportar a Excel
-            </Button>
+          <Col
+            xs={12}
+            md={4}
+            className="d-flex justify-content-md-end justify-content-start"
+          >
+            <div className="d-flex flex-wrap gap-2 w-100 justify-content-md-end">
+              <Button
+                variant="outline-secondary"
+                className="w-100 w-md-auto"
+                onClick={() => fetchLogs(limit)}
+                disabled={loading}
+              >
+                Recargar
+              </Button>
+              <Button
+                variant="success"
+                className="w-100 w-md-auto"
+                onClick={exportLogsExcel}
+                disabled={!filteredLogs.length}
+              >
+                Exportar a Excel
+              </Button>
+            </div>
           </Col>
         </Row>
 
         {error && (
-          <Alert variant="danger" onClose={() => setError("")} dismissible>
+          <Alert
+            variant="danger"
+            onClose={() => setError("")}
+            dismissible
+            className="mb-3"
+          >
             {error}
           </Alert>
         )}
         {success && (
-          <Alert variant="success" onClose={() => setSuccess("")} dismissible>
+          <Alert
+            variant="success"
+            onClose={() => setSuccess("")}
+            dismissible
+            className="mb-3"
+          >
             {success}
           </Alert>
         )}
 
+        {/* Filtros */}
         <Card className="mb-3">
           <Card.Body>
             <Row className="g-2 align-items-end">
-              <Col md={2}>
+              <Col xs={12} md={2}>
                 <Form.Label>Tamaño de muestra</Form.Label>
                 <Form.Select
                   value={limit}
@@ -366,7 +383,7 @@ export default function AdminLogs() {
                 </Form.Select>
               </Col>
 
-              <Col md={3}>
+              <Col xs={12} md={3}>
                 <Form.Label>Buscar en el registro</Form.Label>
                 <Form.Control
                   placeholder="Nombre, acción, tipo, IP..."
@@ -375,7 +392,7 @@ export default function AdminLogs() {
                 />
               </Col>
 
-              <Col md={2}>
+              <Col xs={12} md={2}>
                 <Form.Label>Realizado por</Form.Label>
                 <Form.Select
                   value={filterUser}
@@ -390,7 +407,7 @@ export default function AdminLogs() {
                 </Form.Select>
               </Col>
 
-              <Col md={2}>
+              <Col xs={12} md={2}>
                 <Form.Label>Tipo de acción</Form.Label>
                 <Form.Select
                   value={filterAction}
@@ -405,7 +422,7 @@ export default function AdminLogs() {
                 </Form.Select>
               </Col>
 
-              <Col md={1}>
+              <Col xs={6} md={1}>
                 <Form.Label>Desde</Form.Label>
                 <Form.Control
                   type="date"
@@ -414,7 +431,7 @@ export default function AdminLogs() {
                 />
               </Col>
 
-              <Col md={1}>
+              <Col xs={6} md={1}>
                 <Form.Label>Hasta</Form.Label>
                 <Form.Control
                   type="date"
@@ -423,11 +440,11 @@ export default function AdminLogs() {
                 />
               </Col>
 
-              <Col md={2} className="text-end">
+              <Col xs={12} md={2} className="text-md-end">
                 <Button
                   variant="outline-secondary"
                   size="sm"
-                  className="mt-3"
+                  className="mt-2 w-100 w-md-auto"
                   onClick={() => {
                     setSearch("");
                     setFilterUser("");
@@ -456,7 +473,7 @@ export default function AdminLogs() {
         </Row>
 
         {loading ? (
-          <div className="d-flex align-items-center">
+          <div className="d-flex align-items-center justify-content-center py-4">
             <Spinner animation="border" size="sm" className="me-2" />
             <span>Cargando registros...</span>
           </div>
@@ -472,7 +489,7 @@ export default function AdminLogs() {
                   <th>Acción realizada</th>
                   <th>Resumen</th>
                   <th>IP</th>
-                  <th style={{ width: "80px" }}>Detalle</th>
+                  <th>Detalle</th>
                 </tr>
               </thead>
               <tbody>
@@ -593,7 +610,7 @@ export default function AdminLogs() {
               <Row>
                 <Col md={6}>
                   <h6>Datos antes del cambio</h6>
-                  <pre className="bg-light p-2 small">
+                  <pre className="bg-light p-2 small" style={{ overflowX: "auto" }}>
                     {JSON.stringify(
                       selectedLog.datos_antes_parsed,
                       null,
@@ -603,7 +620,7 @@ export default function AdminLogs() {
                 </Col>
                 <Col md={6}>
                   <h6>Datos después del cambio</h6>
-                  <pre className="bg-light p-2 small">
+                  <pre className="bg-light p-2 small" style={{ overflowX: "auto" }}>
                     {JSON.stringify(
                       selectedLog.datos_despues_parsed,
                       null,

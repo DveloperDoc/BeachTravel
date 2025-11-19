@@ -22,7 +22,7 @@ export default function AdminVillas() {
   const [success, setSuccess] = useState("");
 
   const [showModal, setShowModal] = useState(false);
-  
+
   const [editingVilla, setEditingVilla] = useState(null);
   const [form, setForm] = useState({
     nombre: "",
@@ -31,7 +31,6 @@ export default function AdminVillas() {
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Estados para eliminación
   const [showConfirmVilla, setShowConfirmVilla] = useState(false);
   const [villaToDelete, setVillaToDelete] = useState(null);
   const [deletingVilla, setDeletingVilla] = useState(false);
@@ -248,17 +247,33 @@ export default function AdminVillas() {
   return (
     <>
       <NavbarUser />
-      <Container className="mt-4">
-        <Row className="mb-3">
-          <Col>
-            <h2>Administración de JJVV</h2>
-            <p>
-              Aquí puedes crear o editar juntas de vecino y definir el cupo máximo de
-              personas que pueden inscribirse en cada una.
+
+      <Container fluid className="py-4 px-3 px-md-4">
+        {/* Título + botón nueva JJVV */}
+        <Row className="mb-3 align-items-center">
+          <Col xs={12} md={8} className="mb-2 mb-md-0">
+            <h2 className="mb-1">Administración de JJVV</h2>
+            <p className="mb-0 text-muted">
+              Aquí puedes crear o editar juntas de vecinos y definir el cupo
+              máximo de personas que pueden inscribirse en cada una.
             </p>
+          </Col>
+          <Col
+            xs={12}
+            md={4}
+            className="d-flex justify-content-md-end justify-content-start"
+          >
+            <Button
+              variant="primary"
+              onClick={openNewModal}
+              className="w-100 w-md-auto"
+            >
+              + Nueva junta de vecinos
+            </Button>
           </Col>
         </Row>
 
+        {/* Alertas */}
         {(error || success) && (
           <Row className="mb-3">
             <Col>
@@ -267,6 +282,7 @@ export default function AdminVillas() {
                   variant="danger"
                   onClose={() => setError("")}
                   dismissible
+                  className="mb-2"
                 >
                   {error}
                 </Alert>
@@ -284,16 +300,9 @@ export default function AdminVillas() {
           </Row>
         )}
 
-        <Row className="mb-3">
-          <Col>
-            <Button variant="primary" onClick={openNewModal}>
-              + Nueva junta de vecinos
-            </Button>
-          </Col>
-        </Row>
-
+        {/* Tabla / loading */}
         {loading ? (
-          <div className="d-flex align-items-center">
+          <div className="d-flex align-items-center justify-content-center py-4">
             <Spinner animation="border" size="sm" className="me-2" />
             <span>Cargando jjvv...</span>
           </div>
@@ -304,7 +313,7 @@ export default function AdminVillas() {
                 <th>#</th>
                 <th>Nombre</th>
                 <th>Cupo máximo</th>
-                <th style={{ width: "180px" }}>Acciones</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -318,21 +327,22 @@ export default function AdminVillas() {
                       : "Sin límite"}
                   </td>
                   <td>
-                    <Button
-                      variant="warning"
-                      size="sm"
-                      className="me-2"
-                      onClick={() => openEditModal(v)}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleAskDeleteVilla(v)}
-                    >
-                      Eliminar
-                    </Button>
+                    <div className="d-flex flex-wrap gap-2">
+                      <Button
+                        variant="warning"
+                        size="sm"
+                        onClick={() => openEditModal(v)}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleAskDeleteVilla(v)}
+                      >
+                        Eliminar
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -20,14 +20,22 @@ export default function NavbarUser() {
   const homePath = isAdmin ? "/admin" : "/personas";
 
   return (
-    <Navbar bg="dark" variant="dark" expand="lg" className="mb-4">
-      <Container>
-        <Navbar.Brand as={Link} to={homePath}>
+    <Navbar
+      bg="light"
+      variant="light"
+      expand="md"
+      collapseOnSelect
+      className="shadow-sm mb-3"
+    >
+      <Container fluid className="px-3 px-md-4">
+        <Navbar.Brand as={Link} to={homePath} className="fw-semibold">
           Registro JJVV
         </Navbar.Brand>
 
         <Navbar.Toggle aria-controls="main-navbar" />
+
         <Navbar.Collapse id="main-navbar">
+          {/* Menú principal */}
           <Nav className="me-auto">
             {/* DIRIGENTE */}
             {user.rol === "DIRIGENTE" && (
@@ -52,19 +60,21 @@ export default function NavbarUser() {
                 </Nav.Link>
 
                 <Nav.Link as={Link} to="/admin/logs">
-                  Logs
+                  Actividad
                 </Nav.Link>
               </>
             )}
           </Nav>
 
-          <Nav>
-            <Navbar.Text className="me-3">
-              {user.nombre} — {user.rol}
+          {/* Info usuario + logout */}
+          <Nav className="ms-auto mt-2 mt-md-0 align-items-center gap-2 flex-wrap">
+            <Navbar.Text className="small text-muted text-truncate">
+              {user.nombre || user.email}{" "}
+              {user.rol && <strong>({user.rol})</strong>}
             </Navbar.Text>
 
             <Button
-              variant="outline-light"
+              variant="outline-danger"
               size="sm"
               onClick={handleLogout}
             >
