@@ -168,6 +168,24 @@ select {
   max-width: 100%;
 }
 
+/* =========
+   Tablas
+   ========= */
+
+/* Alineación vertical consistente en tablas Bootstrap */
+.table td,
+.table th {
+  vertical-align: middle;
+}
+
+/* Permitir que el contenido se parta en varias líneas
+   cuando usemos la clase text-break en celdas */
+.table td.text-break,
+.table th.text-break {
+  word-break: break-word;
+  white-space: normal;
+}
+
 /* Breakpoints responsive */
 
 /* Tablets */

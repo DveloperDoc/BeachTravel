@@ -307,21 +307,23 @@ export default function AdminVillas() {
             <span>Cargando jjvv...</span>
           </div>
         ) : (
-          <Table striped bordered hover responsive>
+          <Table striped bordered hover responsive className="table-sm">
             <thead>
               <tr>
-                <th>#</th>
+                {/* índice oculto en pantallas pequeñas */}
+                <th className="d-none d-md-table-cell">#</th>
                 <th>Nombre</th>
-                <th>Cupo máximo</th>
+                {/* Cupo máximo se puede ocultar en xs si quieres aún más espacio */}
+                <th className="d-none d-sm-table-cell">Cupo máximo</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {villas.map((v, idx) => (
                 <tr key={v.id}>
-                  <td>{idx + 1}</td>
-                  <td>{v.nombre}</td>
-                  <td>
+                  <td className="d-none d-md-table-cell">{idx + 1}</td>
+                  <td className="text-break">{v.nombre}</td>
+                  <td className="d-none d-sm-table-cell">
                     {v.cupo_maximo && v.cupo_maximo > 0
                       ? v.cupo_maximo
                       : "Sin límite"}
