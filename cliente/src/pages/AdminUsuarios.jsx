@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState, useMemo } from "react";
 import {
   Container,
   Button,
@@ -9,6 +9,9 @@ import {
   Col,
   Alert,
   Spinner,
+  InputGroup,
+  OverlayTrigger,
+  Tooltip,
 } from "react-bootstrap";
 import NavbarUser from "../components/NavbarUser";
 import { AuthContext } from "../context/AuthContext";
@@ -40,6 +43,11 @@ export default function AdminUsuarios() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Filtros
+  const [search, setSearch] = useState("");
+  const [filterRol, setFilterRol] = useState("");
+  const [filterVillaId, setFilterVillaId] = useState("");
 
   // ==============================
   // Carga inicial: usuarios + villas
@@ -82,6 +90,36 @@ export default function AdminUsuarios() {
       fetchData();
     }
   }, [token, authFetch]);
+
+  // ==============================
+  // Copiar email al portapapeles
+  // ==============================
+  const copyEmailToClipboard = async (email) => {
+    if (!email) return;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(email);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = email;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+
+      setSuccess("Correo copiado al portapapeles");
+      setTimeout(() => setSuccess(""), 2000);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo copiar el correo");
+      setTimeout(() => setError(""), 2000);
+    }
+  };
 
   // ==============================
   // Validación frontend
@@ -399,13 +437,40 @@ export default function AdminUsuarios() {
   };
 
   // ==============================
+  // Filtros (derivados)
+  // ==============================
+  const filteredUsers = useMemo(() => {
+    let data = [...users];
+
+    if (search.trim()) {
+      const term = search.trim().toLowerCase();
+      data = data.filter(
+        (u) =>
+          u.nombre.toLowerCase().includes(term) ||
+          (u.email || "").toLowerCase().includes(term)
+      );
+    }
+
+    if (filterRol) {
+      data = data.filter((u) => u.rol === filterRol);
+    }
+
+    if (filterVillaId) {
+      const vid = Number(filterVillaId);
+      data = data.filter((u) => Number(u.villa_id) === vid);
+    }
+
+    return data;
+  }, [users, search, filterRol, filterVillaId]);
+
+  // ==============================
   // Render
   // ==============================
   return (
     <>
       <NavbarUser />
 
-      <Container fluid className="py-4 px-3 px-md-4">
+      <Container fluid className="py-4 px-3 px-md-4 admin-usuarios-page">
         {/* Título + botón logs */}
         <Row className="mb-3 align-items-center">
           <Col xs={12} md={8} className="mb-2 mb-md-0">
@@ -424,6 +489,7 @@ export default function AdminUsuarios() {
               to="/admin/logs"
               className="btn btn-outline-secondary w-100 w-md-auto mt-2 mt-md-0"
             >
+              <i className="bi bi-clipboard-data me-1" />
               Ver registro de actividad
             </Link>
           </Col>
@@ -456,18 +522,78 @@ export default function AdminUsuarios() {
           <Col>
             <div className="d-flex flex-wrap gap-2">
               <Button variant="primary" onClick={openNewUserModal}>
+                <i className="bi bi-person-plus me-1" />
                 + Nuevo usuario
               </Button>
               <Button variant="success" onClick={exportDirigentesExcel}>
+                <i className="bi bi-file-earmark-excel me-1" />
                 Exportar dirigentes
               </Button>
               <Button
                 variant="outline-success"
                 onClick={exportIntegrantesExcel}
               >
+                <i className="bi bi-people-fill me-1" />
                 Exportar integrantes de villas
               </Button>
             </div>
+          </Col>
+        </Row>
+
+        {/* Filtros de usuarios */}
+        <Row className="mb-3 g-2 align-items-end">
+          <Col xs={12} md={4}>
+            <Form.Label className="d-md-none">Buscar usuario</Form.Label>
+            <InputGroup>
+              <Form.Control
+                placeholder="Buscar por nombre o correo..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search && (
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => setSearch("")}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </InputGroup>
+          </Col>
+          <Col xs={12} md={4}>
+            <Form.Label className="d-md-none">Rol</Form.Label>
+            <Form.Select
+              value={filterRol}
+              onChange={(e) => setFilterRol(e.target.value)}
+            >
+              <option value="">Todos los roles</option>
+              <option value="ADMIN">ADMIN</option>
+              <option value="DIRIGENTE">DIRIGENTE</option>
+            </Form.Select>
+          </Col>
+          <Col xs={12} md={4}>
+            <Form.Label className="d-md-none">Villa (dirigentes)</Form.Label>
+            <Form.Select
+              value={filterVillaId}
+              onChange={(e) => setFilterVillaId(e.target.value)}
+            >
+              <option value="">Todas las JJVV</option>
+              {villas.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.nombre}
+                </option>
+              ))}
+            </Form.Select>
+          </Col>
+        </Row>
+
+        {/* Info cantidad */}
+        <Row className="mb-2">
+          <Col>
+            <small className="text-muted">
+              Mostrando {filteredUsers.length} de {users.length} usuarios
+              {search || filterRol || filterVillaId ? " (filtrados)" : ""}.
+            </small>
           </Col>
         </Row>
 
@@ -478,23 +604,44 @@ export default function AdminUsuarios() {
             <span>Cargando usuarios...</span>
           </div>
         ) : (
-          <Table striped bordered hover responsive>
+          <Table
+            striped
+            bordered
+            hover
+            responsive
+            className="admin-usuarios-table"
+          >
             <thead>
               <tr>
                 <th>#</th>
                 <th>Nombre</th>
-                <th>Email</th>
+                <th className="text-center">Correo</th>
                 <th>Rol</th>
                 <th>Villa</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u, idx) => (
+              {filteredUsers.map((u, idx) => (
                 <tr key={u.id}>
                   <td>{idx + 1}</td>
                   <td>{u.nombre}</td>
-                  <td>{u.email}</td>
+                  <td className="text-center">
+                    <OverlayTrigger
+                      placement="top"
+                      overlay={
+                        <Tooltip>Copiar correo al portapapeles</Tooltip>
+                      }
+                    >
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => copyEmailToClipboard(u.email)}
+                      >
+                        Correo
+                      </Button>
+                    </OverlayTrigger>
+                  </td>
                   <td>{u.rol}</td>
                   <td>{u.villa_nombre || "—"}</td>
                   <td>
@@ -504,6 +651,7 @@ export default function AdminUsuarios() {
                         size="sm"
                         onClick={() => openEditUserModal(u)}
                       >
+                        <i className="bi bi-pencil-square me-1" />
                         Editar
                       </Button>
                       <Button
@@ -511,16 +659,27 @@ export default function AdminUsuarios() {
                         size="sm"
                         onClick={() => handleAskDeleteUser(u)}
                       >
+                        <i className="bi bi-trash me-1" />
                         Eliminar
                       </Button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {users.length === 0 && (
+
+              {!filteredUsers.length && users.length === 0 && !loading && (
                 <tr>
                   <td colSpan={6} className="text-center">
-                    No hay usuarios registrados.
+                    No hay usuarios registrados. Use el botón{" "}
+                    <strong>“+ Nuevo usuario”</strong> para crear el primero.
+                  </td>
+                </tr>
+              )}
+
+              {!filteredUsers.length && users.length > 0 && !loading && (
+                <tr>
+                  <td colSpan={6} className="text-center">
+                    No hay usuarios que coincidan con los filtros actuales.
                   </td>
                 </tr>
               )}
@@ -538,13 +697,18 @@ export default function AdminUsuarios() {
             </Modal.Title>
           </Modal.Header>
           <Modal.Body>
+            <p className="text-muted">
+              Los campos marcados con <strong>*</strong> son obligatorios.
+            </p>
+
             <Form.Group className="mb-3">
-              <Form.Label>Nombre</Form.Label>
+              <Form.Label>Nombre *</Form.Label>
               <Form.Control
                 name="nombre"
                 value={form.nombre}
                 onChange={handleFormChange}
                 isInvalid={!!formErrors.nombre}
+                autoFocus
               />
               <Form.Control.Feedback type="invalid">
                 {formErrors.nombre}
@@ -552,7 +716,7 @@ export default function AdminUsuarios() {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Email</Form.Label>
+              <Form.Label>Email *</Form.Label>
               <Form.Control
                 type="email"
                 name="email"
@@ -586,7 +750,7 @@ export default function AdminUsuarios() {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Rol</Form.Label>
+              <Form.Label>Rol *</Form.Label>
               <Form.Select
                 name="rol"
                 value={form.rol}
@@ -603,14 +767,14 @@ export default function AdminUsuarios() {
 
             {form.rol === "DIRIGENTE" && (
               <Form.Group className="mb-3">
-                <Form.Label>Villa</Form.Label>
+                <Form.Label>Villa *</Form.Label>
                 <Form.Select
                   name="villa_id"
                   value={form.villa_id}
                   onChange={handleFormChange}
                   isInvalid={!!formErrors.villa_id}
                 >
-                  <option value="">Seleccione una villa</option>
+                  <option value="">Seleccione una JJVV</option>
                   {villas.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.nombre}

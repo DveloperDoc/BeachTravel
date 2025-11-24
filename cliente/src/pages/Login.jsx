@@ -12,16 +12,43 @@ import {
 
 export default function Login() {
   const { login, loading, isAuthenticated, user } = useContext(AuthContext);
-  const [email, setEmail] = useState("correo@correo.cl");
-  const [password, setPassword] = useState("54321");
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const navigate = useNavigate();
+
+  const validate = () => {
+    const errors = {};
+
+    if (!email.trim()) {
+      errors.email = "El correo es obligatorio";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      errors.email = "Formato de correo inválido";
+    }
+
+    if (!password.trim()) {
+      errors.password = "La contraseña es obligatoria";
+    } else if (password.length < 4) {
+      errors.password = "La contraseña debe tener al menos 4 caracteres";
+    }
+
+    return errors;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setFieldErrors({});
 
-    const result = await login(email, password);
+    const errors = validate();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    const result = await login(email.trim(), password);
 
     if (!result.ok) {
       setError(result.message || "Credenciales inválidas");
@@ -32,6 +59,7 @@ export default function Login() {
     navigate(rol === "ADMIN" ? "/admin" : "/personas");
   };
 
+  // Si ya está autenticado, redirige directo
   useEffect(() => {
     if (isAuthenticated && user) {
       const rol = user.rol;
@@ -46,14 +74,16 @@ export default function Login() {
     >
       {/* Wrapper para controlar ancho y márgenes en móvil */}
       <div className="w-100 px-3" style={{ maxWidth: "420px" }}>
-        <Card className="shadow-sm">
+        <Card className="shadow-sm border-0">
           <Card.Body className="p-4">
-            <Card.Title className="text-center mb-2">
-              Iniciar sesión
-            </Card.Title>
-            <p className="text-center text-muted mb-4 small">
-              Accede al registro de juntas de vecinos con tu cuenta asignada.
-            </p>
+            {/* Encabezado */}
+            <div className="text-center mb-3">
+              <h5 className="mb-1">Registro de Juntas de Vecinos</h5>
+              <p className="text-muted mb-0 small">
+                Inicia sesión con las credenciales entregadas por la
+                Municipalidad.
+              </p>
+            </div>
 
             {error && (
               <Alert
@@ -67,7 +97,7 @@ export default function Login() {
 
             <Form onSubmit={handleSubmit} noValidate>
               <Form.Group className="mb-3" controlId="loginEmail">
-                <Form.Label>Email</Form.Label>
+                <Form.Label>Correo electrónico</Form.Label>
                 <Form.Control
                   type="email"
                   placeholder="usuario@correo.cl"
@@ -76,7 +106,11 @@ export default function Login() {
                   required
                   disabled={loading}
                   autoComplete="username"
+                  isInvalid={!!fieldErrors.email}
                 />
+                <Form.Control.Feedback type="invalid">
+                  {fieldErrors.email}
+                </Form.Control.Feedback>
               </Form.Group>
 
               <Form.Group className="mb-3" controlId="loginPassword">
@@ -89,7 +123,11 @@ export default function Login() {
                   required
                   disabled={loading}
                   autoComplete="current-password"
+                  isInvalid={!!fieldErrors.password}
                 />
+                <Form.Control.Feedback type="invalid">
+                  {fieldErrors.password}
+                </Form.Control.Feedback>
               </Form.Group>
 
               <Button
@@ -112,6 +150,11 @@ export default function Login() {
                   "Entrar"
                 )}
               </Button>
+
+              <p className="text-center text-muted mt-3 mb-0 small">
+                Si no tienes usuario o tienes problemas para ingresar,
+                comunícate con la Unidad de Informática Municipal.
+              </p>
             </Form>
           </Card.Body>
         </Card>

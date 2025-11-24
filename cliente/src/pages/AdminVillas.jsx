@@ -268,7 +268,8 @@ export default function AdminVillas() {
               onClick={openNewModal}
               className="w-100 w-md-auto"
             >
-              + Nueva junta de vecinos
+              <i className="bi bi-plus-circle me-1" />
+              Nueva junta de vecinos
             </Button>
           </Col>
         </Row>
@@ -299,6 +300,15 @@ export default function AdminVillas() {
             </Col>
           </Row>
         )}
+
+        {/* Info cantidad */}
+        <Row className="mb-2">
+          <Col>
+            <small className="text-muted">
+              Total de juntas de vecinos registradas: {villas.length}.
+            </small>
+          </Col>
+        </Row>
 
         {/* Tabla / loading */}
         {loading ? (
@@ -335,6 +345,7 @@ export default function AdminVillas() {
                         size="sm"
                         onClick={() => openEditModal(v)}
                       >
+                        <i className="bi bi-pencil-square me-1" />
                         Editar
                       </Button>
                       <Button
@@ -342,6 +353,7 @@ export default function AdminVillas() {
                         size="sm"
                         onClick={() => handleAskDeleteVilla(v)}
                       >
+                        <i className="bi bi-trash me-1" />
                         Eliminar
                       </Button>
                     </div>

@@ -11,6 +11,8 @@ import {
   Spinner,
   Pagination,
   InputGroup,
+  OverlayTrigger,
+  Tooltip,
 } from "react-bootstrap";
 import NavbarUser from "../components/NavbarUser";
 import { AuthContext } from "../context/AuthContext";
@@ -58,10 +60,33 @@ export default function Personas() {
   const [search, setSearch] = useState("");
   const [filterVillaId, setFilterVillaId] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
 
-  // Cupo máximo para el dirigente (si no viene, por defecto 2)
-  const CUPO_MAX = user?.cupo_maximo || 2;
+  const isDirigente = user?.rol === "DIRIGENTE";
+  const isAdmin = user?.rol === "ADMIN";
+
+  // Cupo máximo calculado según rol y villa
+  const CUPO_MAX = useMemo(() => {
+    if (!user) return 0;
+
+    // Para dirigente: usar el cupo de su villa
+    if (user.rol === "DIRIGENTE") {
+      const villa = villas.find(
+        (v) => Number(v.id) === Number(user.villa_id)
+      );
+      const cupo = villa?.cupo_maximo;
+      // 0 o null = sin límite
+      return cupo && cupo > 0 ? cupo : 0;
+    }
+
+    // Para ADMIN: opcionalmente usar cupo definido en el usuario
+    const cupoUser = user.cupo_maximo;
+    return cupoUser && cupoUser > 0 ? cupoUser : 0;
+  }, [user, villas]);
+
+  // Solo se considera lleno si hay cupo definido (>0)
+  const cupoLleno =
+    isDirigente && CUPO_MAX > 0 && personas.length >= CUPO_MAX;
 
   // ==============================
   // Helpers: RUT y teléfono
@@ -99,6 +124,37 @@ export default function Personas() {
   const normalizarTelefono9 = (value) => {
     // Solo dígitos, máximo 9
     return value.replace(/\D/g, "").slice(0, 9);
+  };
+
+  // ==============================
+  // Copiar correo al portapapeles (botón azul)
+  // ==============================
+  const copyEmailToClipboard = async (correo) => {
+    if (!correo) return;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(correo);
+      } else {
+        // Fallback para navegadores antiguos
+        const textarea = document.createElement("textarea");
+        textarea.value = correo;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+
+      setSuccess("Correo copiado al portapapeles");
+      setTimeout(() => setSuccess(""), 2000);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo copiar el correo");
+      setTimeout(() => setError(""), 2000);
+    }
   };
 
   // ==============================
@@ -175,12 +231,13 @@ export default function Personas() {
     if (data.telefono && data.telefono.trim() !== "") {
       const soloDigitos = normalizarTelefono9(data.telefono);
       if (soloDigitos.length !== 9) {
-        errors.telefono = "Debe ingresar 9 dígitos (sin +56, solo número celular)";
+        errors.telefono =
+          "Debe ingresar 9 dígitos (sin +56, solo número celular)";
       }
     }
 
     // Villa solo editable/obligatoria para ADMIN
-    if (user?.rol === "ADMIN") {
+    if (isAdmin) {
       if (!data.villa_id) {
         errors.villa_id = "Debe seleccionar una villa";
       }
@@ -193,7 +250,7 @@ export default function Personas() {
   // Manejo de formularios / modales
   // ==============================
   const openNewModal = () => {
-    if (user?.rol === "DIRIGENTE" && personas.length >= CUPO_MAX) {
+    if (cupoLleno) {
       setCupoMaxData({
         actual: personas.length,
         max: CUPO_MAX,
@@ -287,15 +344,14 @@ export default function Personas() {
       return;
     }
 
-    const targetVillaId =
-      user?.rol === "ADMIN"
-        ? form.villa_id
-          ? Number(form.villa_id)
-          : null
-        : Number(user?.villa_id);
+    const targetVillaId = isAdmin
+      ? form.villa_id
+        ? Number(form.villa_id)
+        : null
+      : Number(user?.villa_id);
 
     // Validación de cupo para ADMIN al crear
-    if (user?.rol === "ADMIN" && !isEdit && targetVillaId) {
+    if (isAdmin && !isEdit && targetVillaId) {
       const villa = villas.find((v) => Number(v.id) === targetVillaId);
       const villaCupoMax = villa?.cupo_maximo ?? null;
 
@@ -324,9 +380,7 @@ export default function Personas() {
         nombre: form.nombre,
         rut: form.rut,
         direccion: form.direccion,
-        telefono: form.telefono
-          ? normalizarTelefono9(form.telefono)
-          : "", // guardar solo 9 dígitos
+        telefono: form.telefono ? normalizarTelefono9(form.telefono) : "",
         correo: form.correo,
         villa_id: targetVillaId,
       };
@@ -451,13 +505,13 @@ export default function Personas() {
       );
     }
 
-    if (user?.rol === "ADMIN" && filterVillaId) {
+    if (isAdmin && filterVillaId) {
       const vid = Number(filterVillaId);
       data = data.filter((p) => Number(p.villa_id) === vid);
     }
 
     return data;
-  }, [personas, search, filterVillaId, user]);
+  }, [personas, search, filterVillaId, isAdmin]);
 
   const totalItems = filteredPersonas.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -470,7 +524,7 @@ export default function Personas() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterVillaId]);
+  }, [search, filterVillaId, pageSize]);
 
   // ==============================
   // Exportar a Excel (respeta filtros)
@@ -521,15 +575,17 @@ export default function Personas() {
     (v) => v.id == user?.villa_id
   )?.nombre;
   const tituloVilla =
-    user?.rol === "DIRIGENTE"
-      ? `Listado de la junta de vecinos ${nombreVillaDirigente || ""}`
+    isDirigente && nombreVillaDirigente
+      ? `Listado de la junta de vecinos ${nombreVillaDirigente}`
+      : isDirigente
+      ? "Listado de la junta de vecinos"
       : "Listado de personas de todas las villas";
 
   return (
     <>
       <NavbarUser />
 
-      <Container fluid className="py-4 px-3 px-md-4">
+      <Container fluid className="py-4 px-3 px-md-4 personas-page">
         {/* Título + botón Excel */}
         <Row className="mb-3 align-items-center">
           <Col xs={12} md={8} className="mb-2 mb-md-0">
@@ -546,13 +602,14 @@ export default function Personas() {
               onClick={exportPersonasExcel}
               className="w-100 w-md-auto"
             >
+              <i className="bi bi-file-earmark-excel me-1" />
               Exportar listado a Excel
             </Button>
           </Col>
         </Row>
 
         {/* Contador de cupos para DIRIGENTE */}
-        {user?.rol === "DIRIGENTE" && (
+        {isDirigente && (
           <Row className="mb-3">
             <Col xs={12} className="d-flex justify-content-md-end">
               <div className="d-flex align-items-center p-2 px-3 bg-light border rounded shadow-sm w-100 w-md-auto">
@@ -560,7 +617,13 @@ export default function Personas() {
                 <span className="badge bg-primary fs-6 me-1">
                   {personas.length}
                 </span>
-                <span className="fw-bold">/ {CUPO_MAX}</span>
+                {CUPO_MAX > 0 ? (
+                  <span className="fw-bold">/ {CUPO_MAX}</span>
+                ) : (
+                  <span className="text-muted ms-2 small">
+                    Sin límite definido para tu villa.
+                  </span>
+                )}
               </div>
             </Col>
           </Row>
@@ -592,21 +655,31 @@ export default function Personas() {
         <Row className="mb-3 g-2 align-items-end">
           <Col xs={12} md={4}>
             <Form.Label className="d-md-none">Buscar</Form.Label>
-            <Form.Control
-              placeholder="Buscar por nombre o RUT..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <InputGroup>
+              <Form.Control
+                placeholder="Buscar por nombre o RUT..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search && (
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => setSearch("")}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </InputGroup>
           </Col>
 
-          {user?.rol === "ADMIN" && (
+          {isAdmin && (
             <Col xs={12} md={4}>
-              <Form.Label className="d-md-none">Villa</Form.Label>
+              <Form.Label className="d-md-none">JJVV</Form.Label>
               <Form.Select
                 value={filterVillaId}
                 onChange={(e) => setFilterVillaId(e.target.value)}
               >
-                <option value="">Todas las villas</option>
+                <option value="">Todas las JJVV</option>
                 {villas.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.nombre}
@@ -616,28 +689,54 @@ export default function Personas() {
             </Col>
           )}
 
+          {/* AQUÍ LA MODIFICACIÓN */}
           <Col
             xs={12}
             md={4}
-            className="d-flex justify-content-md-end justify-content-start"
+            className="d-flex flex-column align-items-start mt-2 mt-md-0"
           >
             <Button
               variant="primary"
               onClick={openNewModal}
               className="w-100 w-md-auto"
+              disabled={cupoLleno}
             >
               + Nueva persona
             </Button>
+            {cupoLleno && (
+              <small className="text-danger mt-1">
+                Has alcanzado el máximo de personas permitidas.
+              </small>
+            )}
           </Col>
         </Row>
 
-        {/* Info cantidad */}
-        <Row className="mb-2">
-          <Col>
+        {/* Info cantidad + filas por página */}
+        <Row className="mb-2 align-items-center">
+          <Col xs={12} md={6}>
             <small className="text-muted">
               Mostrando {paginatedPersonas.length} de {totalItems} personas
               {search || filterVillaId ? " (filtradas)" : ""}.
             </small>
+          </Col>
+          <Col
+            xs={12}
+            md={6}
+            className="d-flex justify-content-md-end mt-2 mt-md-0"
+          >
+            <Form.Select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              style={{ maxWidth: 160 }}
+              size="sm"
+            >
+              <option value={10}>10 por página</option>
+              <option value={25}>25 por página</option>
+              <option value={50}>50 por página</option>
+            </Form.Select>
           </Col>
         </Row>
 
@@ -649,16 +748,25 @@ export default function Personas() {
           </div>
         ) : (
           <>
-            <Table striped bordered hover responsive>
+            <Table
+              striped
+              bordered
+              hover
+              responsive
+              size="sm"
+              className="personas-table"
+            >
               <thead>
                 <tr>
                   <th>#</th>
                   <th>Nombre</th>
                   <th>RUT</th>
-                  <th>Dirección</th>
+                  {/* Dirección solo en pantallas medianas hacia arriba */}
+                  <th className="d-none d-md-table-cell">Dirección</th>
                   <th>Teléfono</th>
-                  <th>Correo</th>
-                  <th>Villa</th>
+                  <th className="text-center">Correo</th>
+                  {/* Villa solo en pantallas medianas hacia arriba */}
+                  <th className="d-none d-md-table-cell">Villa</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -666,16 +774,53 @@ export default function Personas() {
                 {paginatedPersonas.map((p, idx) => (
                   <tr key={p.id}>
                     <td>{startIndex + idx + 1}</td>
-                    <td>{p.nombre}</td>
-                    <td>{p.rut}</td>
-                    <td>{p.direccion}</td>
-                    <td>{p.telefono ? `+56 ${p.telefono}` : ""}</td>
-                    <td>{p.correo}</td>
+
+                    {/* Nombre + Villa (en móvil se muestra villa debajo del nombre) */}
                     <td>
+                      <div>{p.nombre}</div>
+                      <small className="text-muted d-md-none">
+                        {p.villa_nombre ||
+                          villas.find((v) => v.id === p.villa_id)?.nombre ||
+                          "—"}
+                      </small>
+                    </td>
+
+                    <td>{p.rut}</td>
+
+                    {/* Dirección solo en md+ */}
+                    <td className="d-none d-md-table-cell">{p.direccion}</td>
+
+                    <td>{p.telefono ? `+56 ${p.telefono}` : ""}</td>
+
+                    {/* Botón azul que copia el correo */}
+                    <td className="text-center">
+                      {p.correo ? (
+                        <OverlayTrigger
+                          placement="top"
+                          overlay={
+                            <Tooltip>Copiar correo al portapapeles</Tooltip>
+                          }
+                        >
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => copyEmailToClipboard(p.correo)}
+                          >
+                            Correo
+                          </Button>
+                        </OverlayTrigger>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+
+                    {/* Villa solo en md+ (ya se muestra bajo el nombre en móvil) */}
+                    <td className="d-none d-md-table-cell">
                       {p.villa_nombre ||
                         villas.find((v) => v.id === p.villa_id)?.nombre ||
                         "—"}
                     </td>
+
                     <td>
                       <div className="d-flex flex-wrap gap-2">
                         <Button
@@ -683,6 +828,7 @@ export default function Personas() {
                           size="sm"
                           onClick={() => openEditModal(p)}
                         >
+                          <i className="bi bi-pencil-square me-1" />
                           Editar
                         </Button>
                         <Button
@@ -690,16 +836,29 @@ export default function Personas() {
                           size="sm"
                           onClick={() => handleAskDelete(p)}
                         >
+                          <i className="bi bi-trash me-1" />
                           Eliminar
                         </Button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {!paginatedPersonas.length && (
+
+                {/* Estados vacíos diferenciados */}
+                {!paginatedPersonas.length && totalItems === 0 && !loading && (
                   <tr>
                     <td colSpan={8} className="text-center">
-                      No hay personas que coincidan con los filtros.
+                      Aún no hay personas registradas. Use el botón{" "}
+                      <strong>“+ Nueva persona”</strong> para agregar la
+                      primera.
+                    </td>
+                  </tr>
+                )}
+
+                {!paginatedPersonas.length && totalItems > 0 && !loading && (
+                  <tr>
+                    <td colSpan={8} className="text-center">
+                      No hay personas que coincidan con los filtros actuales.
                     </td>
                   </tr>
                 )}
@@ -754,13 +913,18 @@ export default function Personas() {
             </Modal.Title>
           </Modal.Header>
           <Modal.Body>
+            <p className="text-muted">
+              Los campos marcados con <strong>*</strong> son obligatorios.
+            </p>
+
             <Form.Group className="mb-3">
-              <Form.Label>Nombre</Form.Label>
+              <Form.Label>Nombre *</Form.Label>
               <Form.Control
                 name="nombre"
                 value={form.nombre}
                 onChange={handleFormChange}
                 isInvalid={!!formErrors.nombre}
+                autoFocus
               />
               <Form.Control.Feedback type="invalid">
                 {formErrors.nombre}
@@ -768,7 +932,7 @@ export default function Personas() {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>RUT</Form.Label>
+              <Form.Label>RUT *</Form.Label>
               <Form.Control
                 name="rut"
                 value={form.rut}
@@ -830,9 +994,9 @@ export default function Personas() {
               </Form.Control.Feedback>
             </Form.Group>
 
-            {user?.rol === "ADMIN" && (
+            {isAdmin && (
               <Form.Group className="mb-3">
-                <Form.Label>Villa</Form.Label>
+                <Form.Label>Villa *</Form.Label>
                 <Form.Select
                   name="villa_id"
                   value={form.villa_id}
@@ -852,7 +1016,7 @@ export default function Personas() {
               </Form.Group>
             )}
 
-            {user?.rol === "DIRIGENTE" && (
+            {isDirigente && (
               <p className="text-muted mb-0">
                 La persona quedará automáticamente asociada a tu villa.
               </p>

@@ -12,6 +12,8 @@ import {
   Pagination,
   Modal,
   Badge,
+  OverlayTrigger,
+  Tooltip,
 } from "react-bootstrap";
 import NavbarUser from "../components/NavbarUser";
 import { AuthContext } from "../context/AuthContext";
@@ -320,22 +322,43 @@ export default function AdminLogs() {
             className="d-flex justify-content-md-end justify-content-start"
           >
             <div className="d-flex flex-wrap gap-2 w-100 justify-content-md-end">
-              <Button
-                variant="outline-secondary"
-                className="w-100 w-md-auto"
-                onClick={() => fetchLogs(limit)}
-                disabled={loading}
+              <OverlayTrigger
+                placement="top"
+                overlay={<Tooltip>Volver a cargar los registros</Tooltip>}
               >
-                Recargar
-              </Button>
-              <Button
-                variant="success"
-                className="w-100 w-md-auto"
-                onClick={exportLogsExcel}
-                disabled={!filteredLogs.length}
+                <span className="w-100 w-md-auto">
+                  <Button
+                    variant="outline-secondary"
+                    className="w-100 w-md-auto"
+                    onClick={() => fetchLogs(limit)}
+                    disabled={loading}
+                  >
+                    <i className="bi bi-arrow-clockwise me-1" />
+                    Recargar
+                  </Button>
+                </span>
+              </OverlayTrigger>
+
+              <OverlayTrigger
+                placement="top"
+                overlay={
+                  <Tooltip>
+                    Exportar los registros actuales (según filtros) a Excel
+                  </Tooltip>
+                }
               >
-                Exportar a Excel
-              </Button>
+                <span className="w-100 w-md-auto">
+                  <Button
+                    variant="success"
+                    className="w-100 w-md-auto"
+                    onClick={exportLogsExcel}
+                    disabled={!filteredLogs.length}
+                  >
+                    <i className="bi bi-file-earmark-excel me-1" />
+                    Exportar a Excel
+                  </Button>
+                </span>
+              </OverlayTrigger>
             </div>
           </Col>
         </Row>
@@ -365,6 +388,13 @@ export default function AdminLogs() {
         <Card className="mb-3">
           <Card.Body>
             <Row className="g-2 align-items-end">
+              <Col xs={12}>
+                <p className="text-muted mb-2">
+                  Use los filtros para acotar la búsqueda por usuario, tipo de
+                  acción o rango de fechas.
+                </p>
+              </Col>
+
               <Col xs={12} md={2}>
                 <Form.Label>Tamaño de muestra</Form.Label>
                 <Form.Select
@@ -520,6 +550,7 @@ export default function AdminLogs() {
                         size="sm"
                         onClick={() => openDetail(log)}
                       >
+                        <i className="bi bi-eye me-1" />
                         Ver
                       </Button>
                     </td>
@@ -528,7 +559,8 @@ export default function AdminLogs() {
                 {!paginatedLogs.length && (
                   <tr>
                     <td colSpan={8} className="text-center">
-                      No hay registros que coincidan con los filtros.
+                      No hay registros que coincidan con los filtros
+                      seleccionados.
                     </td>
                   </tr>
                 )}
@@ -610,7 +642,10 @@ export default function AdminLogs() {
               <Row>
                 <Col md={6}>
                   <h6>Datos antes del cambio</h6>
-                  <pre className="bg-light p-2 small" style={{ overflowX: "auto" }}>
+                  <pre
+                    className="bg-light p-2 small"
+                    style={{ overflowX: "auto" }}
+                  >
                     {JSON.stringify(
                       selectedLog.datos_antes_parsed,
                       null,
@@ -620,7 +655,10 @@ export default function AdminLogs() {
                 </Col>
                 <Col md={6}>
                   <h6>Datos después del cambio</h6>
-                  <pre className="bg-light p-2 small" style={{ overflowX: "auto" }}>
+                  <pre
+                    className="bg-light p-2 small"
+                    style={{ overflowX: "auto" }}
+                  >
                     {JSON.stringify(
                       selectedLog.datos_despues_parsed,
                       null,
